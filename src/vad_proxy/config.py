@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8080
 
+    # --- logging -------------------------------------------------------
+    log_dir: str = "logs"
+    log_level: str = "INFO"
+
     # --- personalization (roadmap) ------------------------------------
     log_utterances: bool = False
     data_dir: str = "data"

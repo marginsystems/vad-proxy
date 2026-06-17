@@ -12,6 +12,7 @@ import asyncio
 import sys
 
 from vad_proxy.config import load_settings
+from vad_proxy.logging_setup import configure_logging
 
 
 async def _run_transcribe(path: str, sample_rate: int) -> None:
@@ -19,6 +20,7 @@ async def _run_transcribe(path: str, sample_rate: int) -> None:
     from vad_proxy.pipeline import build_pipeline
 
     settings = load_settings()
+    configure_logging(settings)
     settings.sample_rate = sample_rate
     pcm = decode_to_pcm16(path, sample_rate)
     print(
