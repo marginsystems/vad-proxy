@@ -1,0 +1,23 @@
+vad-proxy
+Copyright (c) 2026 marginsystems
+
+This product includes design and architecture influence from the following
+open-source projects. No source code is copied verbatim; these are credited as
+references for the VAD state-machine design and segmentation approach.
+
+------------------------------------------------------------------------------
+Silero VAD
+  https://github.com/snakers4/silero-vad
+  License: MIT
+  Used as: the Voice Activity Detection model (silero_vad.onnx) loaded at
+  runtime via onnxruntime. The model artifact is downloaded separately and is
+  governed by its own MIT license.
+
+------------------------------------------------------------------------------
+Pipecat
+  https://github.com/pipecat-ai/pipecat
+  License: BSD-2-Clause
+  Used as: design reference for the VAD endpointing state machine
+  (confidence / start_secs / stop_secs) and the segmented STT pattern
+  (buffer-on-start, flush-on-stop with pre-roll).
+------------------------------------------------------------------------------
