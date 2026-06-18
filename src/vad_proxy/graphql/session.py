@@ -64,15 +64,17 @@ class _EndUtterance:
 
 _END_UTTERANCE = _EndUtterance()
 _STOP = object()
+_EVENT_STOP = object()
 
 
 def _build_session_pipeline(
     settings: Settings, event_queue: asyncio.Queue[VoiceEventData]
-) -> VadProxyPipeline:
+) -> tuple[VadProxyPipeline, OutputAdapter]:
     """Build a pipeline whose output adapter feeds ``event_queue``."""
     base = build_pipeline(settings)
+    old_output = base.c.output
     base.c.output = QueueOutputAdapter(event_queue)
-    return base
+    return base, old_output
 
 
 class Session:
@@ -84,9 +86,12 @@ class Session:
         self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = (
             asyncio.Queue(maxsize=100)
         )
-        self._event_queue: asyncio.Queue[VoiceEventData] = asyncio.Queue()
-        self._pipeline = _build_session_pipeline(settings, self._event_queue)
+        self._event_queue: asyncio.Queue[VoiceEventData | object] = asyncio.Queue()
+        self._pipeline, self._original_output = _build_session_pipeline(
+            settings, self._event_queue
+        )
         self._stopped = False
+        self._pipeline_lock = asyncio.Lock()
         self._consumer = asyncio.create_task(
             self._consume(), name=f"vad-session-{session_id}"
         )
@@ -98,14 +103,16 @@ class Session:
                 if item is _STOP or self._stopped:
                     break
                 if item is _END_UTTERANCE:
-                    await self._pipeline.finish()
+                    async with self._pipeline_lock:
+                        await self._pipeline.finish()
                 elif isinstance(item, bytes):
-                    await self._pipeline.feed(item)
+                    async with self._pipeline_lock:
+                        await self._pipeline.feed(item)
         except asyncio.CancelledError:
             raise
         except Exception:
             _log.exception("session %s consumer failed", self.session_id)
-            await self._event_queue.put(None)
+            await self._event_queue.put(_EVENT_STOP)
             self._stopped = True
 
     async def append_audio(self, pcm: bytes) -> None:
@@ -119,18 +126,22 @@ class Session:
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
         while not self._stopped:
             event = await self._event_queue.get()
-            if event is None:
+            if event is _EVENT_STOP:
                 break
             yield event
 
     async def stop(self) -> None:
         if not self._stopped:
-            await self._pipeline.finish()
-            await self._event_queue.put(None)
             self._stopped = True
             await self._input_queue.put(_STOP)
-        await self._consumer
-        await self._pipeline.aclose()
+            async with self._pipeline_lock:
+                await self._pipeline.finish()
+            await self._event_queue.put(_EVENT_STOP)
+        try:
+            await self._consumer
+        finally:
+            await self._pipeline.aclose()
+            await self._original_output.aclose()
 
 
 class SessionManager:
