@@ -200,7 +200,13 @@ class Session:
             await self._input_queue.put(_STOP)
         if self._consumer is not None:
             try:
-                await self._consumer
+                await asyncio.wait_for(self._consumer, timeout=30)
+            except asyncio.TimeoutError:
+                self._consumer.cancel()
+                try:
+                    await self._consumer
+                except (Exception, asyncio.CancelledError):
+                    pass
             except (Exception, asyncio.CancelledError):
                 _log.exception("session %s consumer failed", self.session_id)
         async with self._stop_lock:
