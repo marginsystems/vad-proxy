@@ -130,7 +130,6 @@
         pcmChunks.push(floatToInt16(ds));
       };
       source.connect(processor);
-      processor.connect(audioContext.destination);
       workletNode = processor;
       chunkTimer = setInterval(flushAudio, 200);
     }

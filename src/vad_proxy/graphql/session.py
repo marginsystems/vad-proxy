@@ -110,9 +110,7 @@ class Session:
         self._pipeline_closed = False
         self._pipeline_lock = asyncio.Lock()
         self._stop_lock = asyncio.Lock()
-        self._consumer = asyncio.create_task(
-            self._consume(), name=f"vad-session-{session_id}"
-        )
+        self._consumer = None
 
     async def _consume(self) -> None:
         try:
@@ -145,34 +143,35 @@ class Session:
                 async with self._pipeline_lock:
                     await self._pipeline.finish()
             await self._event_queue.put(_EVENT_STOP)
-            if not self._pipeline_closed:
-                self._pipeline_closed = True
-                await self._pipeline.aclose()
-            if not self._output_closed:
-                self._output_closed = True
-                await self._original_output.aclose()
+            async with self._stop_lock:
+                if not self._pipeline_closed:
+                    self._pipeline_closed = True
+                    await self._pipeline.aclose()
+                if not self._output_closed:
+                    self._output_closed = True
+                    await self._original_output.aclose()
         except asyncio.CancelledError:
             async with self._stop_lock:
                 self._stopped = True
+                if not self._pipeline_closed:
+                    self._pipeline_closed = True
+                    await self._pipeline.aclose()
+                if not self._output_closed:
+                    self._output_closed = True
+                    await self._original_output.aclose()
             await self._event_queue.put(_EVENT_STOP)
-            if not self._pipeline_closed:
-                self._pipeline_closed = True
-                await self._pipeline.aclose()
-            if not self._output_closed:
-                self._output_closed = True
-                await self._original_output.aclose()
             raise
         except Exception:
             async with self._stop_lock:
                 self._stopped = True
+                if not self._pipeline_closed:
+                    self._pipeline_closed = True
+                    await self._pipeline.aclose()
+                if not self._output_closed:
+                    self._output_closed = True
+                    await self._original_output.aclose()
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
-            if not self._pipeline_closed:
-                self._pipeline_closed = True
-                await self._pipeline.aclose()
-            if not self._output_closed:
-                self._output_closed = True
-                await self._original_output.aclose()
             raise
 
     async def append_audio(self, pcm: bytes) -> None:
@@ -188,11 +187,19 @@ class Session:
             await self._input_queue.put(_END_UTTERANCE)
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
-        while True:
-            event = await self._event_queue.get()
-            if event is _EVENT_STOP:
-                break
-            yield event
+        if self._consumer is None:
+            self._consumer = asyncio.create_task(
+                self._consume(), name=f"vad-session-{self.session_id}"
+            )
+        try:
+            while True:
+                event = await self._event_queue.get()
+                if event is _EVENT_STOP:
+                    break
+                yield event
+        finally:
+            if not self._consumer.done():
+                self._consumer.cancel()
 
     async def stop(self) -> None:
         should_send_stop = False
@@ -202,16 +209,18 @@ class Session:
                 should_send_stop = True
         if should_send_stop:
             await self._input_queue.put(_STOP)
-        try:
-            await self._consumer
-        except (Exception, asyncio.CancelledError):
-            _log.exception("session %s consumer failed", self.session_id)
-        if not self._pipeline_closed:
-            self._pipeline_closed = True
-            await self._pipeline.aclose()
-        if not self._output_closed:
-            self._output_closed = True
-            await self._original_output.aclose()
+        if self._consumer is not None:
+            try:
+                await self._consumer
+            except (Exception, asyncio.CancelledError):
+                _log.exception("session %s consumer failed", self.session_id)
+        async with self._stop_lock:
+            if not self._pipeline_closed:
+                self._pipeline_closed = True
+                await self._pipeline.aclose()
+            if not self._output_closed:
+                self._output_closed = True
+                await self._original_output.aclose()
 
 
 class SessionManager:
