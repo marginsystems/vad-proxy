@@ -112,8 +112,11 @@ class Session:
                         await self._pipeline.feed(item)
             # Drain any items that arrived after _STOP (TOCTOU race with
             # append_audio).
-            while not self._input_queue.empty():
-                item = self._input_queue.get_nowait()
+            while True:
+                try:
+                    item = self._input_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
                         await self._pipeline.finish()
@@ -134,7 +137,11 @@ class Session:
         except Exception:
             self._stopped = True
             _log.exception("session %s consumer failed", self.session_id)
+            await self._pipeline.aclose()
             await self._event_queue.put(_EVENT_STOP)
+            if not self._output_closed:
+                self._output_closed = True
+                await self._original_output.aclose()
 
     async def append_audio(self, pcm: bytes) -> None:
         if self._stopped:
