@@ -4,20 +4,101 @@ Clients stream raw mono signed-16-bit PCM at the configured sample rate over a
 WebSocket. Each binary message is fed into a per-connection pipeline; completed
 utterances are transcribed, refined, and proxied by the configured output
 adapter. A text message ``"flush"`` forces any in-progress utterance out.
+
+GraphQL-over-WebSocket (``graphql-transport-ws``) is also exposed at ``/graphql``
+for token-authenticated voice streaming with base64 PCM chunks and transcript
+subscriptions.
 """
 
 from __future__ import annotations
 
+import hmac
+import logging
+from typing import Any
+
+_log = logging.getLogger(__name__)
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from strawberry.exceptions import ConnectionRejectionError
+from strawberry.fastapi import GraphQLRouter
+from strawberry.http.typevars import Context
 
 from vad_proxy.config import Settings, load_settings
+from vad_proxy.graphql.schema import schema
+from vad_proxy.graphql.session import SessionManager
 from vad_proxy.logging_setup import configure_logging
 from vad_proxy.pipeline import build_pipeline
 
 
+def _parse_allowed_origins(value: str) -> list[str]:
+    value = value.strip()
+    if not value or value == "*":
+        return ["*"]
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _token_ok(settings: Settings, provided: str | None) -> bool:
+    expected = settings.auth_token
+    if not expected:
+        return True
+    if provided is None:
+        return False
+    if not isinstance(provided, str):
+        return False
+    return hmac.compare_digest(provided, expected)
+
+
+class AuthGraphQLRouter(GraphQLRouter):
+    """GraphQL router that validates ``connectionParams.token`` on WS connect."""
+
+    def __init__(self, settings: Settings, *args: Any, **kwargs: Any) -> None:
+        self._settings = settings
+        super().__init__(*args, **kwargs)
+
+    async def on_ws_connect(self, context: Context) -> Any:
+        params: dict[str, Any] | None = None
+        if isinstance(context, dict):
+            params = context.get("connection_params")
+        elif hasattr(context, "connection_params"):
+            params = context.connection_params
+        token = None
+        if isinstance(params, dict):
+            token = params.get("token")
+        if not _token_ok(self._settings, token):
+            raise ConnectionRejectionError({"message": "invalid token"})
+        return await super().on_ws_connect(context)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
+    session_manager = SessionManager(settings)
     app = FastAPI(title="vad-proxy", version="0.1.0")
+
+    origins = _parse_allowed_origins(settings.allowed_origins)
+    if not settings.auth_token:
+        _log.warning(
+            "VAD_PROXY_AUTH_TOKEN is empty — authentication disabled "
+            "(set a token to restrict access)"
+        )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=origins != ["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    async def graphql_context() -> dict[str, SessionManager]:
+        return {"session_manager": session_manager}
+
+    graphql_router = AuthGraphQLRouter(
+        settings,
+        schema,
+        context_getter=graphql_context,
+        graphql_ide=None,
+    )
+    app.include_router(graphql_router, prefix="/graphql")
 
     @app.get("/health")
     async def health() -> dict:
@@ -27,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "stt_backend": settings.stt_backend,
             "llm_enabled": settings.llm_enabled,
             "output": settings.output,
+            "graphql_auth_required": bool(settings.auth_token),
         }
 
     @app.websocket("/ws")

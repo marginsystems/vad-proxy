@@ -39,14 +39,16 @@ class PipelineComponents:
     personalizer: Personalizer
 
 
-def build_pipeline(settings: Settings) -> "VadProxyPipeline":
+def build_pipeline(
+    settings: Settings, output: OutputAdapter | None = None
+) -> "VadProxyPipeline":
     """Construct a pipeline with all components wired from settings."""
     vad = SileroVad(sample_rate=settings.sample_rate)
     components = PipelineComponents(
         vad=vad,
         stt=build_stt(settings),
         smart=build_smart_layer(settings),
-        output=build_output(settings),
+        output=build_output(settings) if output is None else output,
         personalizer=build_personalizer(settings),
     )
     return VadProxyPipeline(settings, components)

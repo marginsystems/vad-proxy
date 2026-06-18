@@ -64,6 +64,11 @@ Run the 24/7 WebSocket listener (clients stream raw 16 kHz mono PCM):
 vad-proxy serve
 ```
 
+**GraphQL voice API** (recommended for browser clients): token-authenticated
+`graphql-transport-ws` at `/graphql` — subscribe to `listen`, stream base64 PCM via
+`appendAudio`, receive `transcript` events. See [docs/INTEGRATION.md](docs/INTEGRATION.md)
+and the runnable demo at [examples/browser-voice/index.html](examples/browser-voice/index.html).
+
 ## Run with Docker
 
 The recommended way to run the 24/7 listener in production:
@@ -73,7 +78,8 @@ cp .env.example .env          # optional: add API keys
 docker compose up --build -d
 ```
 
-- **WebSocket:** `ws://localhost:8080/ws`
+- **WebSocket (legacy):** `ws://localhost:8080/ws`
+- **GraphQL WebSocket:** `ws://localhost:8080/graphql` (`connectionParams.token` when `VAD_PROXY_AUTH_TOKEN` is set)
 - **Health:** `http://localhost:8080/health`
 - **Logs:** `logs/vad-proxy.log` on the host (bind-mounted from `/app/logs`)
 - **Data:** `data/` on the host (utterance logging, if enabled)
@@ -85,6 +91,12 @@ Stop the container:
 
 ```bash
 docker compose down
+```
+
+Full restart with a clean log file (drops old errors/transcripts from prior runs):
+
+```bash
+./scripts/docker-restart.sh
 ```
 
 ## Testing
@@ -100,6 +112,12 @@ fresh subprocess and asserts the utterance is detected and transcribed.
 > Note: on some virtualized CPUs the Silero model can be numerically unstable
 > across process launches. The product itself is reliable when run normally;
 > see [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for details and mitigations.
+
+## Deploy (voice.biosystems.dev)
+
+Production deploy behind nginx + Let's Encrypt with a locked-down ufw ruleset is
+documented in [deploy/deploy.md](deploy/deploy.md). Run `sudo bash deploy/setup-server.sh`
+on the server, then `docker compose up -d --build`.
 
 ## Roadmap: personalization
 
