@@ -57,6 +57,9 @@ class QueueOutputAdapter(OutputAdapter):
             )
         )
 
+    async def aclose(self) -> None:
+        pass
+
 
 class _EndUtterance:
     """Sentinel placed on the input queue to flush trailing audio."""
@@ -191,8 +194,6 @@ class Session:
             if self._stopped:
                 return
             self._stopped = True
-        if self._consumer.done():
-            return
         await self._input_queue.put(_STOP)
         try:
             await self._consumer
