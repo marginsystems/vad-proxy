@@ -106,8 +106,12 @@ You must:
 5. `btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)))` or a proper
    base64 helper for large buffers.
 
-See **`examples/browser-voice/index.html`** for a runnable reference
-implementation.
+See **`examples/browser-voice/index.html`** for a zero-dependency HTML reference
+implementation, or **`frontend/`** (Voice Lab) for the full local dev UI:
+
+```bash
+cd frontend && npm install && npm run dev
+```
 
 ## Example subscription (graphql-ws)
 
