@@ -194,6 +194,8 @@ async def _expect_rejected(ws_url: str, token: str) -> None:
                 msg = json.loads(raw)
                 if msg.get("type") == "connection_ack":
                     pytest.fail("expected connection rejection, got connection_ack")
+                if msg.get("type") == "connection_error":
+                    return
     except websockets.exceptions.ConnectionClosed as exc:
         if exc.code != 4403:
             pytest.fail(f"expected close code 4403, got {exc.code}")

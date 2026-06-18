@@ -109,7 +109,8 @@ class Session:
                     async with self._pipeline_lock:
                         await self._pipeline.feed(item)
         except asyncio.CancelledError:
-            raise
+            self._stopped = True
+            await self._event_queue.put(_EVENT_STOP)
         except Exception:
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
@@ -117,6 +118,8 @@ class Session:
 
     async def append_audio(self, pcm: bytes) -> None:
         await self._input_queue.put(pcm)
+        if self._stopped:
+            raise RuntimeError("session stopped")
 
     async def end_utterance(self) -> None:
         if self._stopped:
