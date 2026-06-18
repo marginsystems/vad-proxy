@@ -90,6 +90,7 @@ class Session:
         )
         self._stopped = False
         self._output_closed = False
+        self._pipeline_closed = False
         self._pipeline_lock = asyncio.Lock()
         self._stop_lock = asyncio.Lock()
         self._consumer = asyncio.create_task(
@@ -127,7 +128,9 @@ class Session:
         except asyncio.CancelledError:
             self._stopped = True
             await self._event_queue.put(_EVENT_STOP)
-            await self._pipeline.aclose()
+            if not self._pipeline_closed:
+                self._pipeline_closed = True
+                await self._pipeline.aclose()
             if not self._output_closed:
                 self._output_closed = True
                 await self._original_output.aclose()
@@ -136,7 +139,9 @@ class Session:
             self._stopped = True
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
-            await self._pipeline.aclose()
+            if not self._pipeline_closed:
+                self._pipeline_closed = True
+                await self._pipeline.aclose()
             if not self._output_closed:
                 self._output_closed = True
                 await self._original_output.aclose()
@@ -169,7 +174,9 @@ class Session:
         if self._consumer.cancelled():
             return
         await self._consumer
-        await self._pipeline.aclose()
+        if not self._pipeline_closed:
+            self._pipeline_closed = True
+            await self._pipeline.aclose()
         if not self._output_closed:
             self._output_closed = True
             await self._original_output.aclose()
