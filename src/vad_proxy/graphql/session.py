@@ -131,6 +131,11 @@ class Session:
                     continue
                 async with self._stop_lock:
                     if self._pipeline_closed:
+                        _log.warning(
+                            "dropping item %s after pipeline closed for session %s",
+                            type(item).__name__,
+                            self.session_id,
+                        )
                         continue
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
@@ -173,7 +178,10 @@ class Session:
         async with self._stop_lock:
             if self._stopped:
                 return False
-            self._input_queue.put_nowait(pcm)
+            try:
+                self._input_queue.put_nowait(pcm)
+            except asyncio.QueueFull:
+                return False
             return True
 
     async def end_utterance(self) -> bool:

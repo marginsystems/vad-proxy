@@ -44,7 +44,9 @@ def _token_ok(settings: Settings, provided: str | None) -> bool:
         return True
     if provided is None:
         return False
-    return hmac.compare_digest(str(provided), expected)
+    if not isinstance(provided, str):
+        return False
+    return hmac.compare_digest(provided, expected)
 
 
 class AuthGraphQLRouter(GraphQLRouter):
