@@ -1,6 +1,6 @@
 """GraphQL-over-WebSocket integration test (subprocess + graphql-transport-ws).
 
-Exercises token auth, the ``listen`` subscription, and ``appendAudio`` mutations
+Exercises origin access, the ``listen`` subscription, and ``appendAudio`` mutations
 by streaming PCM from the bundled test MP3 through the live server.
 """
 
@@ -24,7 +24,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_AUDIO = REPO_ROOT / "tests" / "data" / "test-123.mp3"
 MODEL_PATH = REPO_ROOT / "models" / "silero_vad.onnx"
 MAX_ATTEMPTS = 6
-AUTH_TOKEN = "test-graphql-token"
 EXPECTED = "hello this is a test"
 
 LISTEN_QUERY = """
@@ -83,28 +82,23 @@ def _listen_event(msg: dict, sub_id: str) -> dict | None:
 
 async def _graphql_ws_round_trip(
     ws_url: str,
-    token: str | None,
     audio_chunks: list[str],
     *,
+    origin: str | None = None,
     wait_for_transcript: bool = True,
 ) -> list[dict]:
     """Run listen + appendAudio over graphql-transport-ws; return events."""
     events: list[dict] = []
     session_id: str | None = None
+    extra_headers = {"Origin": origin} if origin else None
 
     async with websockets.connect(
         ws_url,
         subprotocols=["graphql-transport-ws"],
         open_timeout=10,
+        additional_headers=extra_headers,
     ) as ws:
-        await ws.send(
-            json.dumps(
-                {
-                    "type": "connection_init",
-                    "payload": {"token": token} if token else {},
-                }
-            )
-        )
+        await ws.send(json.dumps({"type": "connection_init", "payload": {}}))
         while True:
             raw = await asyncio.wait_for(ws.recv(), timeout=10)
             msg = json.loads(raw)
@@ -191,16 +185,15 @@ async def _graphql_ws_round_trip(
     return events
 
 
-async def _expect_rejected(ws_url: str, token: str) -> None:
+async def _expect_origin_rejected(ws_url: str, origin: str) -> None:
     try:
         async with websockets.connect(
             ws_url,
             subprotocols=["graphql-transport-ws"],
             open_timeout=10,
+            additional_headers={"Origin": origin},
         ) as ws:
-            await ws.send(
-                json.dumps({"type": "connection_init", "payload": {"token": token}})
-            )
+            await ws.send(json.dumps({"type": "connection_init", "payload": {}}))
             while True:
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
                 msg = json.loads(raw)
@@ -215,7 +208,7 @@ async def _expect_rejected(ws_url: str, token: str) -> None:
 
 @pytest.mark.skipif(not TEST_AUDIO.exists(), reason="bundled test audio missing")
 @pytest.mark.skipif(not MODEL_PATH.exists(), reason="Silero model not downloaded")
-def test_graphql_ws_transcript_and_auth():
+def test_graphql_ws_transcript():
     port = 18080
     env = {
         **os.environ,
@@ -225,7 +218,7 @@ def test_graphql_ws_transcript_and_auth():
         "VAD_PROXY_PORT": str(port),
         "VAD_PROXY_STT_BACKEND": "mock",
         "VAD_PROXY_LLM_ENABLED": "false",
-        "VAD_PROXY_AUTH_TOKEN": AUTH_TOKEN,
+        "VAD_PROXY_ALLOWED_ORIGINS": "https://biosystems.dev",
     }
     proc = subprocess.Popen(
         [sys.executable, "-m", "vad_proxy.server"],
@@ -240,13 +233,9 @@ def test_graphql_ws_transcript_and_auth():
         ws_url = f"ws://127.0.0.1:{port}/graphql"
         chunks = _pcm_chunks(TEST_AUDIO)
 
-        asyncio.run(_expect_rejected(ws_url, "wrong-token"))
-
         last_events: list[dict] = []
         for _ in range(MAX_ATTEMPTS):
-            last_events = asyncio.run(
-                _graphql_ws_round_trip(ws_url, AUTH_TOKEN, chunks)
-            )
+            last_events = asyncio.run(_graphql_ws_round_trip(ws_url, chunks))
             transcripts = [
                 e.get("text", "").lower()
                 for e in last_events
@@ -268,7 +257,7 @@ def test_graphql_ws_transcript_and_auth():
 
 @pytest.mark.skipif(not TEST_AUDIO.exists(), reason="bundled test audio missing")
 @pytest.mark.skipif(not MODEL_PATH.exists(), reason="Silero model not downloaded")
-def test_graphql_ws_no_auth_when_token_unset():
+def test_graphql_ws_rejects_disallowed_origin():
     port = 18081
     env = {
         **os.environ,
@@ -278,7 +267,7 @@ def test_graphql_ws_no_auth_when_token_unset():
         "VAD_PROXY_PORT": str(port),
         "VAD_PROXY_STT_BACKEND": "mock",
         "VAD_PROXY_LLM_ENABLED": "false",
-        "VAD_PROXY_AUTH_TOKEN": "",
+        "VAD_PROXY_ALLOWED_ORIGINS": "https://biosystems.dev",
     }
     proc = subprocess.Popen(
         [sys.executable, "-m", "vad_proxy.server"],
@@ -290,15 +279,8 @@ def test_graphql_ws_no_auth_when_token_unset():
     )
     try:
         _wait_for_health(port)
-        events = asyncio.run(
-            _graphql_ws_round_trip(
-                f"ws://127.0.0.1:{port}/graphql",
-                token=None,
-                audio_chunks=_pcm_chunks(TEST_AUDIO)[:1],
-                wait_for_transcript=False,
-            )
-        )
-        assert any(e.get("kind") == "session_started" for e in events)
+        ws_url = f"ws://127.0.0.1:{port}/graphql"
+        asyncio.run(_expect_origin_rejected(ws_url, "https://evil.example"))
     finally:
         proc.terminate()
         try:

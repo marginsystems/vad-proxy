@@ -17,7 +17,7 @@ export type HealthResponse = {
   stt_backend: string;
   llm_enabled: boolean;
   output: string;
-  graphql_auth_required: boolean;
+  allowed_origins: string[];
 };
 
 export type SessionStatus = "idle" | "connecting" | "listening" | "error";

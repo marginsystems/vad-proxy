@@ -8,9 +8,8 @@ import { DEFAULT_WS_URL } from "./lib/types";
 
 export default function App() {
   const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
-  const [token, setToken] = useState("");
 
-  const session = useVoiceSession(wsUrl, token);
+  const session = useVoiceSession(wsUrl);
 
   return (
     <div className="app">
@@ -26,12 +25,10 @@ export default function App() {
 
       <ConnectionPanel
         wsUrl={wsUrl}
-        token={token}
         health={session.health}
         healthError={session.healthError}
         status={session.status}
         onWsUrlChange={setWsUrl}
-        onTokenChange={setToken}
         onRefreshHealth={session.refreshHealth}
       />
 

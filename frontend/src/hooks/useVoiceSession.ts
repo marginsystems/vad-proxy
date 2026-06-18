@@ -9,7 +9,7 @@ import type {
 } from "../lib/types";
 import { healthUrlFromWs } from "../lib/types";
 
-export function useVoiceSession(wsUrl: string, token: string) {
+export function useVoiceSession(wsUrl: string) {
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -51,7 +51,7 @@ export function useVoiceSession(wsUrl: string, token: string) {
     setEvents([]);
     setLogs([]);
 
-    const session = new VoiceGraphqlSession(wsUrl, token, {
+    const session = new VoiceGraphqlSession(wsUrl, {
       onEvent: (ev) => {
         pushLog(ev.kind, ev);
         setEvents((prev) => [...prev, ev]);
@@ -79,7 +79,7 @@ export function useVoiceSession(wsUrl: string, token: string) {
       await session.stop();
       sessionRef.current = null;
     }
-  }, [wsUrl, token, pushLog]);
+  }, [wsUrl, pushLog]);
 
   const endUtterance = useCallback(async () => {
     await sessionRef.current?.endUtterance();

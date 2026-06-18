@@ -8,7 +8,7 @@ Live-test **mic → VAD → STT → transcript** against a local vad-proxy serve
 
 ```bash
 cd ..   # repo root
-cp .env.example .env   # optional: add STT keys + VAD_PROXY_AUTH_TOKEN
+cp .env.example .env   # optional: add STT keys
 docker compose up -d --build
 ```
 
@@ -24,7 +24,7 @@ npm run dev
 Open **http://localhost:5173**
 
 - **WebSocket URL** defaults to `ws://127.0.0.1:8080/graphql` (matches Docker bind on localhost).
-- **Auth token**: paste `VAD_PROXY_AUTH_TOKEN` from your `.env` if the server requires it.
+- Localhost origins are always permitted — no auth tokens or keys required.
 - Click **Start listening**, speak, watch transcripts appear.
 
 ## Controls
@@ -42,7 +42,7 @@ Open **http://localhost:5173**
 | Symptom | Fix |
 |---------|-----|
 | Health check failed | Run `docker compose up -d` and confirm `curl http://127.0.0.1:8080/health` |
-| 4403 Forbidden | Wrong or missing auth token |
+| 4403 Forbidden | Your browser origin is not in `VAD_PROXY_ALLOWED_ORIGINS` (localhost always works) |
 | Mic access failed | Grant browser microphone permission (HTTPS not required on localhost) |
 | No transcript | Check `VAD_PROXY_STT_BACKEND` in `.env`; mock STT still returns text for test audio patterns |
 

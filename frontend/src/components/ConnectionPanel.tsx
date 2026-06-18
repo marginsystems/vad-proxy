@@ -3,23 +3,19 @@ import { DEFAULT_WS_URL, PROD_WS_URL } from "../lib/types";
 
 type Props = {
   wsUrl: string;
-  token: string;
   health: HealthResponse | null;
   healthError: string | null;
   status: string;
   onWsUrlChange: (url: string) => void;
-  onTokenChange: (token: string) => void;
   onRefreshHealth: () => void;
 };
 
 export function ConnectionPanel({
   wsUrl,
-  token,
   health,
   healthError,
   status,
   onWsUrlChange,
-  onTokenChange,
   onRefreshHealth,
 }: Props) {
   return (
@@ -52,23 +48,14 @@ export function ConnectionPanel({
           spellCheck={false}
         />
       </label>
-      <label>
-        Auth token
-        <input
-          type="password"
-          value={token}
-          onChange={(e) => onTokenChange(e.target.value)}
-          placeholder="VAD_PROXY_AUTH_TOKEN from .env"
-        />
-      </label>
       <div className="health-banner">
         {healthError ? (
           <span className="bad">Health: {healthError}</span>
         ) : health ? (
           <span>
             Server OK — STT: <strong>{health.stt_backend}</strong>, rate{" "}
-            {health.sample_rate} Hz, auth required:{" "}
-            <strong>{health.graphql_auth_required ? "yes" : "no"}</strong>
+            {health.sample_rate} Hz, origins:{" "}
+            <strong>{health.allowed_origins.join(", ")}</strong>
           </span>
         ) : (
           <span>Checking server…</span>
