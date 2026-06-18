@@ -146,7 +146,7 @@
       }
       pcmChunks.length = 0;
       const b64 = int16ToBase64(merged);
-      client.iterate({
+      await client.iterate({
         query: appendMutation(sessionId, b64).query,
         variables: appendMutation(sessionId, b64).variables,
       }).next();
@@ -209,9 +209,9 @@
       }
     };
 
-    $("flush").onclick = () => {
+    $("flush").onclick = async () => {
       if (!sessionId || !client) return;
-      client.iterate(endUtteranceMutation(sessionId)).next();
+      await client.iterate(endUtteranceMutation(sessionId)).next();
     };
 
     $("stop").onclick = async () => {

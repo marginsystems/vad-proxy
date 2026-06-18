@@ -27,18 +27,18 @@ rm -f /etc/nginx/sites-enabled/default
 
 # If certs are missing, use a temporary HTTP-only bootstrap so nginx -t passes.
 if [[ ! -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
-  cat > "/etc/nginx/sites-available/${NGINX_SITE}.bootstrap" <<'BOOT'
+  cat > "/etc/nginx/sites-available/${NGINX_SITE}.bootstrap" <<BOOT
 server {
     listen 80;
     listen [::]:80;
-    server_name voice.biosystems.dev;
+    server_name ${DOMAIN};
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
+        proxy_set_header Host \$host;
     }
 }
 BOOT

@@ -157,7 +157,14 @@ async def _graphql_ws_round_trip(
                                     },
                                     f"mut-{mut_idx}",
                                 )
+                            mut_idx += 1
+                            await _send_mutation(
+                                END_MUTATION,
+                                {"sessionId": session_id},
+                                f"mut-{mut_idx}",
+                            )
                             audio_sent = True
+                            end_sent = True
                             if not wait_for_transcript:
                                 return events
                     if data.get("kind") == "transcript":
@@ -171,34 +178,25 @@ async def _graphql_ws_round_trip(
                         {"sessionId": session_id},
                         f"mut-{mut_idx}",
                     )
-                elif mid != sub_id and audio_sent and not end_sent and session_id:
-                    mut_idx += 1
-                    await _send_mutation(
-                        END_MUTATION,
-                        {"sessionId": session_id},
-                        f"mut-{mut_idx}",
-                    )
-                    end_sent = True
 
     return events
 
 
 async def _expect_rejected(ws_url: str, token: str) -> None:
-    async with websockets.connect(
-        ws_url,
-        subprotocols=["graphql-transport-ws"],
-        open_timeout=10,
-    ) as ws:
-        await ws.send(
-            json.dumps({"type": "connection_init", "payload": {"token": token}})
-        )
-        raw = await asyncio.wait_for(ws.recv(), timeout=10)
-        # Server should close with 4403; some clients surface this as an exception
-        # before we read connection_ack.
-        if raw:
-            msg = json.loads(raw)
-            if msg.get("type") == "connection_ack":
-                pytest.fail("expected connection rejection, got connection_ack")
+    try:
+        async with websockets.connect(
+            ws_url,
+            subprotocols=["graphql-transport-ws"],
+            open_timeout=10,
+        ) as ws:
+            raw = await asyncio.wait_for(ws.recv(), timeout=10)
+            if raw:
+                msg = json.loads(raw)
+                if msg.get("type") == "connection_ack":
+                    pytest.fail("expected connection rejection, got connection_ack")
+    except websockets.exceptions.ConnectionClosed as exc:
+        if exc.code != 4403:
+            pytest.fail(f"expected close code 4403, got {exc.code}")
 
 
 @pytest.mark.skipif(not TEST_AUDIO.exists(), reason="bundled test audio missing")

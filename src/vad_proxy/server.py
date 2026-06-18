@@ -13,7 +13,10 @@ subscriptions.
 from __future__ import annotations
 
 import hmac
+import logging
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,10 +74,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="vad-proxy", version="0.1.0")
 
     origins = _parse_allowed_origins(settings.allowed_origins)
+    if not settings.auth_token and "*" not in origins:
+        _log.warning(
+            "VAD_PROXY_AUTH_TOKEN is empty — GraphQL connections are accepted "
+            "without authentication"
+        )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=True,
+        allow_credentials=origins != ["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
