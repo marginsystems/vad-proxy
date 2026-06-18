@@ -76,8 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     origins = _parse_allowed_origins(settings.allowed_origins)
     if not settings.auth_token:
         _log.warning(
-            "VAD_PROXY_AUTH_TOKEN is empty — all GraphQL connections will be "
-            "rejected (set a token to allow connections)"
+            "VAD_PROXY_AUTH_TOKEN is empty — authentication disabled "
+            "(set a token to restrict access)"
         )
     app.add_middleware(
         CORSMiddleware,
