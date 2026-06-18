@@ -193,8 +193,7 @@ async def _graphql_ws_round_trip(
                                     if data2:
                                         events.append(data2)
                                 elif mtype in ("complete", "error") and rid == sub_id:
-                                    pending_muts.clear()
-                                    break
+                                    return events
                             mut_idx += 1
                             end_mut_id = f"mut-{mut_idx}"
                             await _send_mutation(

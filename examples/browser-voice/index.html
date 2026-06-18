@@ -148,9 +148,9 @@
       const b64 = int16ToBase64(merged);
       const { query, variables } = appendMutation(sessionId, b64);
       try {
-        const result = await client.iterate({ query, variables }).next();
-        const data = result.value?.data;
-        if (data?.appendAudio === false) append("warning: audio chunk rejected (session ended)");
+        for await (const result of client.iterate({ query, variables })) {
+          if (result?.data?.appendAudio === false) append("warning: audio chunk rejected (session ended)");
+        }
       } catch (err) {
         append("appendAudio error: " + err);
       }
@@ -223,7 +223,7 @@
     $("flush").onclick = async () => {
       if (!sessionId || !client) return;
       try {
-        await client.iterate(endUtteranceMutation(sessionId)).next();
+        for await (const _ of client.iterate(endUtteranceMutation(sessionId))) {}
       } catch (err) {
         append("endUtterance error: " + err);
       }
