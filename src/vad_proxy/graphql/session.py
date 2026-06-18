@@ -106,6 +106,8 @@ class Session:
             while True:
                 item = await self._input_queue.get()
                 if item is _STOP:
+                    async with self._stop_lock:
+                        self._stopped = True
                     break
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
@@ -176,7 +178,7 @@ class Session:
                 yield event
         finally:
             if not self._consumer.done():
-                self._consumer.cancel()
+                await self._input_queue.put(_STOP)
 
     async def stop(self) -> None:
         should_send_stop = False

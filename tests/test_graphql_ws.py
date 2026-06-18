@@ -50,6 +50,12 @@ mutation End($sessionId: ID!) {
 }
 """
 
+STOP_MUTATION = """
+mutation Stop($sessionId: ID!) {
+  stopSession(sessionId: $sessionId)
+}
+"""
+
 
 def _wait_for_health(port: int, timeout: float = 30.0) -> None:
     deadline = time.time() + timeout
@@ -232,6 +238,12 @@ async def _graphql_ws_round_trip(
                             end_sent = True
                             if not wait_for_transcript:
                                 return events
+                            mut_idx += 1
+                            await _send_mutation(
+                                STOP_MUTATION,
+                                {"sessionId": session_id},
+                                f"mut-{mut_idx}",
+                            )
                     if data.get("kind") == "transcript":
                         return events
             elif mtype in ("complete", "error"):
