@@ -91,12 +91,7 @@
 
     function int16ToBase64(int16) {
       const bytes = new Uint8Array(int16.buffer, int16.byteOffset, int16.byteLength);
-      let binary = "";
-      const step = 0x8000;
-      for (let i = 0; i < bytes.length; i += step) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
-      }
-      return btoa(binary);
+      return btoa(new TextDecoder("latin1").decode(bytes));
     }
 
     function downsample(buffer, fromRate, toRate) {
