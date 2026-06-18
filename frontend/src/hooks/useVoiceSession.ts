@@ -67,6 +67,7 @@ export function useVoiceSession(wsUrl: string) {
     session.start();
 
     try {
+      await session.waitForSession();
       const mic = await startMicCapture((pcm) => {
         void session.appendAudio(pcm);
       });

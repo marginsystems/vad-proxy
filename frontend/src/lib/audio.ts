@@ -69,6 +69,11 @@ export async function startMicCapture(
   };
 
   source.connect(processor);
+  // ScriptProcessor must be connected to destination for onaudioprocess to run.
+  const silent = audioContext.createGain();
+  silent.gain.value = 0;
+  processor.connect(silent);
+  silent.connect(audioContext.destination);
 
   const flush = () => {
     if (stopping || pcmChunks.length === 0) return;
@@ -98,6 +103,7 @@ export async function startMicCapture(
       stopping = true;
       processor.disconnect();
       source.disconnect();
+      silent.disconnect();
       stream.getTracks().forEach((t) => t.stop());
       await audioContext.close();
     },

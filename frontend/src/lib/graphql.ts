@@ -30,13 +30,26 @@ export class VoiceGraphqlSession {
   private client: Client | null = null;
   private disposeSub: (() => void) | null = null;
   private sessionId: string | null = null;
+  private sessionReady: Promise<void>;
+  private resolveSessionReady!: () => void;
 
   constructor(
     private readonly wsUrl: string,
     private readonly callbacks: VoiceSessionCallbacks,
-  ) {}
+  ) {
+    this.sessionReady = new Promise((resolve) => {
+      this.resolveSessionReady = resolve;
+    });
+  }
+
+  async waitForSession(): Promise<void> {
+    await this.sessionReady;
+  }
 
   start(): void {
+    this.sessionReady = new Promise((resolve) => {
+      this.resolveSessionReady = resolve;
+    });
     this.client = createClient({
       url: this.wsUrl,
       on: {
@@ -62,6 +75,7 @@ export class VoiceGraphqlSession {
           this.callbacks.onEvent(ev);
           if (ev.kind === "session_started" && ev.sessionId) {
             this.sessionId = ev.sessionId;
+            this.resolveSessionReady();
             this.callbacks.onStatus(`Session started: ${ev.sessionId}`);
           }
         },
