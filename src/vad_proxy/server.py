@@ -41,7 +41,7 @@ def _parse_allowed_origins(value: str) -> list[str]:
 def _token_ok(settings: Settings, provided: str | None) -> bool:
     expected = settings.auth_token
     if not expected:
-        return False
+        return True
     if provided is None:
         return False
     return hmac.compare_digest(str(provided), expected)
