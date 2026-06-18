@@ -171,6 +171,8 @@ class Session:
                 pass
             except Exception:
                 pass
+        except (Exception, asyncio.CancelledError):
+            pass
 
 
 class SessionManager:
