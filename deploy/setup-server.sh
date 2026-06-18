@@ -52,8 +52,6 @@ if [[ ! -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
   certbot certonly --webroot -w /var/www/certbot \
     -d "${DOMAIN}" --non-interactive --agree-tos -m "${EMAIL}" \
     || certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "${EMAIL}"
-  ln -sf "/etc/nginx/sites-available/${NGINX_SITE}" \
-    "/etc/nginx/sites-enabled/${NGINX_SITE}"
   nginx -t
   systemctl reload nginx
 fi
