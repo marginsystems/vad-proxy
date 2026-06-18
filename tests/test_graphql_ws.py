@@ -157,6 +157,31 @@ async def _graphql_ws_round_trip(
                                     },
                                     f"mut-{mut_idx}",
                                 )
+                            # Wait for all audio mutations to complete on the
+                            # server before sending END so the pipeline has
+                            # consumed the audio before endUtterance flushes.
+                            pending_muts = {
+                                f"mut-{i}" for i in range(1, mut_idx + 1)
+                            }
+                            while pending_muts:
+                                raw = await asyncio.wait_for(
+                                    ws.recv(), timeout=120
+                                )
+                                msg = json.loads(raw)
+                                mtype, rid = (
+                                    msg.get("type"),
+                                    msg.get("id"),
+                                )
+                                if mtype == "complete" and rid in pending_muts:
+                                    pending_muts.discard(rid)
+                                elif mtype == "next" and rid == sub_id:
+                                    data2 = (
+                                        msg.get("payload", {})
+                                        .get("data", {})
+                                        .get("listen")
+                                    )
+                                    if data2:
+                                        events.append(data2)
                             mut_idx += 1
                             await _send_mutation(
                                 END_MUTATION,
@@ -191,6 +216,9 @@ async def _expect_rejected(ws_url: str, token: str) -> None:
             subprotocols=["graphql-transport-ws"],
             open_timeout=10,
         ) as ws:
+            await ws.send(
+                json.dumps({"type": "connection_init", "payload": {"token": token}})
+            )
             while True:
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
                 if raw:

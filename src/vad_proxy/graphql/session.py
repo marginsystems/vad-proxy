@@ -117,7 +117,7 @@ class Session:
 
     async def append_audio(self, pcm: bytes) -> None:
         if self._stopped:
-            raise RuntimeError("session stopped")
+            return
         await self._input_queue.put(pcm)
 
     async def end_utterance(self) -> None:
