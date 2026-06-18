@@ -202,6 +202,7 @@ async def _graphql_ws_round_trip(
                                 {"sessionId": session_id},
                                 end_mut_id,
                             )
+                            sub_done_in_end = False
                             while True:
                                 raw = await asyncio.wait_for(
                                     ws.recv(), timeout=120
@@ -228,12 +229,13 @@ async def _graphql_ws_round_trip(
                                     if data2:
                                         events.append(data2)
                                         if data2.get("kind") == "transcript":
-                                            return events
+                                            break
                                 if (
                                     msg.get("type") in ("complete", "error")
                                     and msg.get("id") == sub_id
                                 ):
-                                    return events
+                                    sub_done_in_end = True
+                                    break
                             audio_sent = True
                             end_sent = True
                             if not wait_for_transcript:
@@ -246,7 +248,7 @@ async def _graphql_ws_round_trip(
                                 stop_mut_id,
                             )
                             stop_done = False
-                            sub_done = False
+                            sub_done = sub_done_in_end
                             while not (stop_done and sub_done):
                                 raw = await asyncio.wait_for(
                                     ws.recv(), timeout=120
@@ -287,7 +289,7 @@ async def _graphql_ws_round_trip(
                         end_sent = True
                         mut_idx += 1
                         await _send_mutation(
-                            END_MUTATION,
+                            STOP_MUTATION,
                             {"sessionId": session_id},
                             f"mut-{mut_idx}",
                         )

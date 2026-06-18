@@ -200,10 +200,14 @@ class Session:
                 self._stopped = True
                 should_send_stop = True
         if should_send_stop:
-            await self._input_queue.put(_STOP)
+            try:
+                await asyncio.wait_for(self._input_queue.put(_STOP), timeout=5)
+            except asyncio.TimeoutError:
+                if self._consumer is not None:
+                    self._consumer.cancel()
         if self._consumer is not None:
             try:
-                await asyncio.wait_for(self._consumer, timeout=30)
+                await asyncio.wait_for(self._consumer, timeout=5)
             except asyncio.TimeoutError:
                 self._consumer.cancel()
                 try:
