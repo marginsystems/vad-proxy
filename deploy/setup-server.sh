@@ -58,6 +58,7 @@ fi
 
 ln -sf "/etc/nginx/sites-available/${NGINX_SITE}" \
   "/etc/nginx/sites-enabled/${NGINX_SITE}"
+systemctl reload nginx
 
 # --- ufw: preserve SSH, allow 80/443 only ---------------------------------
 SSH_PORT="$(ss -tlnp 2>/dev/null | awk '/sshd/ && /LISTEN/ {split($4,a,":"); print a[length(a)]; exit}')"
