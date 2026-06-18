@@ -174,6 +174,10 @@ async def _graphql_ws_round_trip(
                                 )
                                 if mtype == "complete" and rid in pending_muts:
                                     pending_muts.discard(rid)
+                                elif mtype == "error" and rid in pending_muts:
+                                    raise RuntimeError(
+                                        f"mutation {rid} failed: {msg}"
+                                    )
                                 elif mtype == "next" and rid == sub_id:
                                     data2 = (
                                         msg.get("payload", {})
