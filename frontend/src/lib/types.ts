@@ -35,11 +35,15 @@ export const PROD_WS_URL = "wss://voice.biosystems.dev/graphql";
 export function healthUrlFromWs(wsUrl: string): string {
   try {
     const u = new URL(wsUrl);
+    if (u.protocol !== "ws:" && u.protocol !== "wss:") {
+      console.warn(`healthUrlFromWs: unexpected protocol "${u.protocol}"`);
+    }
     u.protocol = u.protocol === "wss:" ? "https:" : "http:";
     u.pathname = "/health";
     u.search = "";
     return u.toString();
-  } catch {
+  } catch (e) {
+    console.warn(`healthUrlFromWs: invalid wsUrl "${wsUrl}"`, e);
     return "http://127.0.0.1:8080/health";
   }
 }

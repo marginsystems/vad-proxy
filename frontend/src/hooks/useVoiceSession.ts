@@ -9,8 +9,6 @@ import type {
 } from "../lib/types";
 import { healthUrlFromWs } from "../lib/types";
 
-let logId = 0;
-
 export function useVoiceSession(wsUrl: string, token: string) {
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +17,7 @@ export function useVoiceSession(wsUrl: string, token: string) {
   const [events, setEvents] = useState<VoiceEvent[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
+  const logIdRef = useRef(0);
   const sessionRef = useRef<VoiceGraphqlSession | null>(null);
   const micRef = useRef<Awaited<ReturnType<typeof startMicCapture>> | null>(
     null,
@@ -26,7 +25,7 @@ export function useVoiceSession(wsUrl: string, token: string) {
 
   const pushLog = useCallback((label: string, payload: unknown) => {
     setLogs((prev) => [
-      { id: ++logId, ts: Date.now(), label, payload },
+      { id: ++logIdRef.current, ts: Date.now(), label, payload },
       ...prev.slice(0, 199),
     ]);
   }, []);
@@ -38,7 +37,7 @@ export function useVoiceSession(wsUrl: string, token: string) {
       setHealthError(null);
     } catch (e) {
       setHealth(null);
-      setHealthError((e as Error).message);
+      setHealthError(e instanceof Error ? e.message : String(e));
     }
   }, [wsUrl]);
 
@@ -75,7 +74,7 @@ export function useVoiceSession(wsUrl: string, token: string) {
       setStatus("listening");
       pushLog("status", "Microphone started");
     } catch (e) {
-      setError(`Mic access failed: ${(e as Error).message}`);
+      setError(`Mic access failed: ${e instanceof Error ? e.message : String(e)}`);
       setStatus("error");
       await session.stop();
       sessionRef.current = null;

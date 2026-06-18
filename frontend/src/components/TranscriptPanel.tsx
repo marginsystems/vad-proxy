@@ -25,7 +25,7 @@ export function TranscriptPanel({ latest, transcripts }: Props) {
       {transcripts.length > 0 && (
         <ul className="transcript-list">
           {[...transcripts].reverse().map((t, i) => (
-            <li key={`${t.startSecs}-${i}`}>
+            <li key={`transcript-${i}`}>
               <span className="quote-sm">{t.text}</span>
               <span className="meta">
                 [{t.startSecs?.toFixed(2)}–{t.endSecs?.toFixed(2)}s]{" "}

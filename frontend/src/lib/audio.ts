@@ -13,7 +13,7 @@ export function int16ToBase64(int16: Int16Array): string {
   const bytes = new Uint8Array(int16.buffer, int16.byteOffset, int16.byteLength);
   let binary = "";
   for (let i = 0; i < bytes.length; i += 8192) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 8192)));
   }
   return btoa(binary);
 }
