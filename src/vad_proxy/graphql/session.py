@@ -163,7 +163,8 @@ class Session:
                 await self._original_output.aclose()
             raise
         except Exception:
-            self._stopped = True
+            async with self._stop_lock:
+                self._stopped = True
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
             if not self._pipeline_closed:
@@ -194,11 +195,13 @@ class Session:
             yield event
 
     async def stop(self) -> None:
+        should_send_stop = False
         async with self._stop_lock:
-            if self._stopped:
-                return
-            self._stopped = True
-        await self._input_queue.put(_STOP)
+            if not self._stopped:
+                self._stopped = True
+                should_send_stop = True
+        if should_send_stop:
+            await self._input_queue.put(_STOP)
         try:
             await self._consumer
         except (Exception, asyncio.CancelledError):
