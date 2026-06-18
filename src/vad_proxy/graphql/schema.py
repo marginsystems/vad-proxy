@@ -62,6 +62,8 @@ class Mutation:
             raise ValueError("invalid base64 audio payload") from exc
         if not pcm:
             return True
+        if len(pcm) > 1024 * 1024:
+            raise ValueError("audio payload too large")
         await session.append_audio(pcm)
         return True
 
@@ -91,17 +93,19 @@ class Subscription:
         self, info: strawberry.Info, sample_rate: int = 16000
     ) -> AsyncGenerator[VoiceEvent, None]:
         manager: SessionManager = info.context["session_manager"]
-        session = await manager.create_session(sample_rate)
-        yield VoiceEvent(
-            kind="session_started",
-            session_id=strawberry.ID(session.session_id),
-        )
+        session = None
         try:
+            session = await manager.create_session(sample_rate)
+            yield VoiceEvent(
+                kind="session_started",
+                session_id=strawberry.ID(session.session_id),
+            )
             async for event in session.iter_events():
                 event.session_id = session.session_id
                 yield _to_voice_event(event)
         finally:
-            await manager.stop_session(session.session_id)
+            if session is not None:
+                await manager.stop_session(session.session_id)
 
 
 schema = strawberry.Schema(

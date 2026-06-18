@@ -126,8 +126,8 @@ class Session:
             await self._event_queue.put(_EVENT_STOP)
         except asyncio.CancelledError:
             self._stopped = True
-            await self._pipeline.aclose()
             await self._event_queue.put(_EVENT_STOP)
+            await self._pipeline.aclose()
             if not self._output_closed:
                 self._output_closed = True
                 await self._original_output.aclose()
@@ -135,8 +135,8 @@ class Session:
         except Exception:
             self._stopped = True
             _log.exception("session %s consumer failed", self.session_id)
-            await self._pipeline.aclose()
             await self._event_queue.put(_EVENT_STOP)
+            await self._pipeline.aclose()
             if not self._output_closed:
                 self._output_closed = True
                 await self._original_output.aclose()
