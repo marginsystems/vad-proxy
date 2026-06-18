@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 _log = logging.getLogger(__name__)
 
@@ -40,7 +41,8 @@ def _parse_configured_origins(value: str) -> list[str]:
 
 
 def _is_localhost_origin(origin: str) -> bool:
-    return origin.startswith(_LOCALHOST_ORIGIN_PREFIXES)
+    host = urlparse(origin).hostname
+    return host is not None and host in ("localhost", "127.0.0.1")
 
 
 def _effective_origins(settings: Settings) -> list[str]:
@@ -92,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
+        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

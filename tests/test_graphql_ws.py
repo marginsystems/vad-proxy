@@ -235,7 +235,9 @@ def test_graphql_ws_transcript():
 
         last_events: list[dict] = []
         for _ in range(MAX_ATTEMPTS):
-            last_events = asyncio.run(_graphql_ws_round_trip(ws_url, chunks))
+            last_events = asyncio.run(
+                _graphql_ws_round_trip(ws_url, chunks, origin="http://127.0.0.1:18080")
+            )
             transcripts = [
                 e.get("text", "").lower()
                 for e in last_events

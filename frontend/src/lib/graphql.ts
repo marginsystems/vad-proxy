@@ -47,7 +47,7 @@ export class VoiceGraphqlSession {
               ? (event as { code?: number }).code
               : undefined;
           if (code === 4403) {
-            this.callbacks.onError("Origin not allowed (4403 Forbidden)");
+            this.callbacks.onError("Origin not allowed by server (4403)");
           }
         },
       },
