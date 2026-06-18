@@ -56,7 +56,7 @@ Certbot installs a systemd timer for renewal.
 
 ```bash
 # Detect SSH port first — do not lock yourself out
-SSH_PORT=$(ss -tlnp | awk '/sshd/ && /LISTEN/ {split($4,a,":"); print a[length(a)]; exit}')
+SSH_PORT=$(ss -tlnp | awk '/sshd/ && /LISTEN/ {split($4,a,":"); gsub(/[^0-9]/,"",a[length(a)]); print a[length(a)]; exit}')
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow "${SSH_PORT}/tcp"

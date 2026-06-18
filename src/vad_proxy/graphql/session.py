@@ -58,7 +58,8 @@ class QueueOutputAdapter(OutputAdapter):
         )
 
     async def aclose(self) -> None:
-        """No-op: _consume handles event-queue signalling during shutdown."""
+        """Signal the event queue that output is done."""
+        self._queue.put_nowait(_EVENT_STOP)
 
 
 class _EndUtterance:
@@ -128,19 +129,22 @@ class Session:
                     break
                 if item is _STOP:
                     continue
+                async with self._stop_lock:
+                    if self._pipeline_closed:
+                        continue
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
                         await self._pipeline.finish()
                 elif isinstance(item, bytes):
                     async with self._pipeline_lock:
                         await self._pipeline.feed(item)
-            async with self._pipeline_lock:
-                await self._pipeline.finish()
-            self._event_queue.put_nowait(_EVENT_STOP)
             async with self._stop_lock:
                 if not self._pipeline_closed:
+                    async with self._pipeline_lock:
+                        await self._pipeline.finish()
                     self._pipeline_closed = True
                     await self._pipeline.aclose()
+            self._event_queue.put_nowait(_EVENT_STOP)
         except asyncio.CancelledError:
             async with self._stop_lock:
                 self._stopped = True

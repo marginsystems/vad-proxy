@@ -119,6 +119,7 @@
         video: false,
       });
       audioContext = new AudioContext();
+      await audioContext.resume();
       const source = audioContext.createMediaStreamSource(mediaStream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       const inputRate = audioContext.sampleRate;
