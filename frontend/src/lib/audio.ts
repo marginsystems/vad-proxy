@@ -93,9 +93,9 @@ export async function startMicCapture(
 
   return {
     stop: async () => {
-      stopping = true;
       if (chunkTimer !== null) clearTimeout(chunkTimer);
       flush();
+      stopping = true;
       processor.disconnect();
       source.disconnect();
       stream.getTracks().forEach((t) => t.stop());
