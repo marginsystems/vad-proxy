@@ -15,6 +15,7 @@ export function useVoiceSession(wsUrl: string) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [events, setEvents] = useState<VoiceEvent[]>([]);
+  const [liveInterim, setLiveInterim] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   const logIdRef = useRef(0);
@@ -49,11 +50,19 @@ export function useVoiceSession(wsUrl: string) {
     setError(null);
     setStatus("connecting");
     setEvents([]);
+    setLiveInterim("");
     setLogs([]);
 
     const session = new VoiceGraphqlSession(wsUrl, {
       onEvent: (ev) => {
         pushLog(ev.kind, ev);
+        if (ev.kind === "transcript" && ev.interim) {
+          setLiveInterim(ev.text ?? "");
+          return;
+        }
+        if (ev.kind === "transcript") {
+          setLiveInterim("");
+        }
         setEvents((prev) => [...prev, ev]);
       },
       onError: (msg) => {
@@ -113,6 +122,7 @@ export function useVoiceSession(wsUrl: string) {
     events,
     transcripts,
     latest,
+    liveInterim,
     logs,
     refreshHealth,
     start,

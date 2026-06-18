@@ -45,6 +45,7 @@ export default function App() {
 
       <TranscriptPanel
         latest={session.latest}
+        liveInterim={session.liveInterim}
         transcripts={session.transcripts}
       />
 

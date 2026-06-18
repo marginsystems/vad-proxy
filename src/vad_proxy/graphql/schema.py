@@ -21,6 +21,7 @@ def _to_voice_event(data: VoiceEventData) -> "VoiceEvent":
         start_secs=data.start_secs,
         end_secs=data.end_secs,
         stt_backend=data.stt_backend,
+        interim=data.interim,
     )
 
 
@@ -34,6 +35,7 @@ class VoiceEvent:
     start_secs: float | None = None
     end_secs: float | None = None
     stt_backend: str | None = None
+    interim: bool = False
 
 
 @strawberry.type

@@ -30,5 +30,10 @@ class OutputAdapter(ABC):
     async def send(self, final: FinalText) -> None:
         """Deliver ``final`` to the configured destination."""
 
+    async def send_interim(
+        self, text: str, start_secs: float, end_secs: float, stt_backend: str
+    ) -> None:
+        """Deliver a raw interim transcript (un-polished; optional hook)."""
+
     async def aclose(self) -> None:
         """Release any held resources."""

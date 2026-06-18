@@ -65,10 +65,15 @@ class VadProxyPipeline:
             min_volume=settings.vad_min_volume,
             pre_speech_secs=settings.pre_speech_secs,
             max_utterance_secs=settings.max_utterance_secs,
+            interim_chunk_secs=(
+                settings.interim_secs if settings.interim_enabled else 0.0
+            ),
         )
         self._segmenter = Segmenter(components.vad, params)
         self._chunk_bytes = components.vad.chunk_size * 2
         self._residual = b""
+        self._turn_texts: list[str] = []
+        self._turn_stt_backend = ""
 
     async def feed(self, pcm: bytes) -> None:
         """Push arbitrary-length PCM; processes any complete VAD chunks."""
@@ -79,6 +84,8 @@ class VadProxyPipeline:
             chunk = buffer[offset : offset + self._chunk_bytes]
             offset += self._chunk_bytes
             utterance = self._segmenter.process_chunk(chunk)
+            if self.settings.interim_enabled:
+                await self._drain_and_emit_interims()
             if utterance is not None:
                 await self._handle_utterance(utterance)
         self._residual = buffer[offset:]
@@ -89,11 +96,45 @@ class VadProxyPipeline:
         if tail is not None:
             await self._handle_utterance(tail)
 
+    async def _drain_and_emit_interims(self) -> None:
+        while True:
+            interim_slice = self._segmenter.drain_interim()
+            if interim_slice is None:
+                break
+            transcript = await self.c.stt.transcribe(
+                interim_slice.pcm, self.settings.sample_rate
+            )
+            text = transcript.text.strip()
+            if not text:
+                continue
+            self._turn_texts.append(text)
+            self._turn_stt_backend = transcript.backend
+            joined = " ".join(self._turn_texts)
+            await self.c.output.send_interim(
+                joined,
+                interim_slice.start_secs,
+                interim_slice.end_secs,
+                transcript.backend,
+            )
+
     async def _handle_utterance(self, utterance: Utterance) -> None:
-        transcript = await self.c.stt.transcribe(utterance.pcm, utterance.sample_rate)
-        raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
-        if not raw_text.strip():
-            return
+        if self.settings.interim_enabled:
+            await self._drain_and_emit_interims()
+            raw_text = " ".join(self._turn_texts)
+            stt_backend = self._turn_stt_backend
+            self._turn_texts.clear()
+            self._turn_stt_backend = ""
+            raw_text = self.c.personalizer.bias_vocabulary(raw_text)
+            if not raw_text.strip():
+                return
+        else:
+            transcript = await self.c.stt.transcribe(
+                utterance.pcm, utterance.sample_rate
+            )
+            raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
+            stt_backend = transcript.backend
+            if not raw_text.strip():
+                return
 
         result = await self.c.smart.process(raw_text)
 
@@ -103,10 +144,12 @@ class VadProxyPipeline:
             end_phrase=result.end_phrase,
             start_secs=utterance.start_secs,
             end_secs=utterance.end_secs,
-            stt_backend=transcript.backend,
+            stt_backend=stt_backend,
             refined=result.refined,
-            meta={"stt_confidence": transcript.confidence},
+            meta={},
         )
+        if not self.settings.interim_enabled:
+            final.meta["stt_confidence"] = transcript.confidence
 
         # Personalization dataset logging (best-effort, never blocks output).
         await self.c.personalizer.record_sample(

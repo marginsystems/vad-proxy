@@ -308,6 +308,14 @@ input:focus {
   margin: 0;
 }
 
+.interim {
+  font-style: italic;
+  color: var(--text-muted);
+  margin: 0 0 0.5rem;
+  line-height: 1.4;
+  min-height: 1.4em;
+}
+
 .quote {
   font-size: 1.25rem;
   margin: 0 0 0.5rem;

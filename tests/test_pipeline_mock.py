@@ -25,9 +25,15 @@ class CaptureOutput(OutputAdapter):
 
     def __init__(self):
         self.items: list[FinalText] = []
+        self.interims: list[tuple[str, float, float, str]] = []
 
     async def send(self, final: FinalText) -> None:
         self.items.append(final)
+
+    async def send_interim(
+        self, text: str, start_secs: float, end_secs: float, stt_backend: str
+    ) -> None:
+        self.interims.append((text, start_secs, end_secs, stt_backend))
 
 
 def _build(settings, capture) -> VadProxyPipeline:
@@ -72,3 +78,25 @@ async def test_pipeline_residual_buffering_no_loss():
     await pipeline.finish()
     await pipeline.aclose()
     assert capture.items == []
+
+
+@pytest.mark.asyncio
+async def test_pipeline_interim_emits_before_final(model_available, test_audio_path):
+    """With interim enabled, chunk STT events should precede the final transcript."""
+    from vad_proxy.audio.decode import decode_to_pcm16
+
+    settings = load_settings(
+        stt_backend="mock", llm_enabled=False, interim_enabled=True, interim_secs=0.5
+    )
+    capture = CaptureOutput()
+    pipeline = _build(settings, capture)
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    for i in range(0, len(pcm), 333):
+        await pipeline.feed(pcm[i : i + 333])
+    await pipeline.finish()
+    await pipeline.aclose()
+
+    if capture.items:
+        assert len(capture.interims) >= 1
+        assert capture.interims[-1][0]

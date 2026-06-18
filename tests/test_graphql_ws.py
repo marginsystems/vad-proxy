@@ -158,7 +158,7 @@ async def _graphql_ws_round_trip(
                         audio_sent = True
                         if not wait_for_transcript:
                             return events
-                elif data.get("kind") == "transcript":
+                elif data.get("kind") == "transcript" and not data.get("interim"):
                     return events
 
             if mtype == "complete" and mid in pending_muts:
@@ -218,6 +218,7 @@ def test_graphql_ws_transcript():
         "VAD_PROXY_PORT": str(port),
         "VAD_PROXY_STT_BACKEND": "mock",
         "VAD_PROXY_LLM_ENABLED": "false",
+        "VAD_PROXY_INTERIM_ENABLED": "false",
         "VAD_PROXY_ALLOWED_ORIGINS": "https://biosystems.dev",
     }
     proc = subprocess.Popen(
@@ -269,6 +270,7 @@ def test_graphql_ws_rejects_disallowed_origin():
         "VAD_PROXY_PORT": str(port),
         "VAD_PROXY_STT_BACKEND": "mock",
         "VAD_PROXY_LLM_ENABLED": "false",
+        "VAD_PROXY_INTERIM_ENABLED": "false",
         "VAD_PROXY_ALLOWED_ORIGINS": "https://biosystems.dev",
     }
     proc = subprocess.Popen(

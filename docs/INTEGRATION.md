@@ -55,6 +55,7 @@ type VoiceEvent {
   startSecs: Float
   endSecs: Float
   sttBackend: String
+  interim: Boolean          # true for live raw STT while speaking (no LLM)
 }
 
 type Mutation {
@@ -77,6 +78,11 @@ type Subscription {
 - **`listen`**: creates a new session. The **first** event is always
   `kind: "session_started"` with a `sessionId`. Subsequent events are
   `kind: "transcript"` with the refined text.
+- **`interim`**: when `VAD_PROXY_INTERIM_ENABLED=true`, the server may emit
+  additional `transcript` events with `interim: true` while the user is still
+  speaking. These carry **raw STT text** (joined chunk transcripts so far) and
+  are **not** LLM-polished. The final `transcript` for the turn has
+  `interim: false` (default) and replaces the live line in the UI.
 
 ## Client flow
 
@@ -138,6 +144,7 @@ subscription Listen {
     startSecs
     endSecs
     sttBackend
+    interim
   }
 }
 ```
