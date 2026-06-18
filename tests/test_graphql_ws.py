@@ -244,8 +244,6 @@ async def _graphql_ws_round_trip(
                                 {"sessionId": session_id},
                                 f"mut-{mut_idx}",
                             )
-                    if data.get("kind") == "transcript":
-                        return events
             elif mtype in ("complete", "error"):
                 if mid == sub_id:
                     if not end_sent and session_id:
