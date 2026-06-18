@@ -126,6 +126,7 @@ class Session:
             if not self._output_closed:
                 self._output_closed = True
                 await self._original_output.aclose()
+            raise
         except Exception:
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
@@ -158,7 +159,8 @@ class Session:
         async with self._pipeline_lock:
             await self._pipeline.finish()
         await self._event_queue.put(_EVENT_STOP)
-        await self._consumer
+        if not self._consumer.cancelled():
+            await self._consumer
         await self._pipeline.aclose()
         if not self._output_closed:
             self._output_closed = True

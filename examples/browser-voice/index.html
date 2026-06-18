@@ -143,10 +143,8 @@
       pcmChunks.length = 0;
       if (stopping) return;
       const b64 = int16ToBase64(merged);
-      await client.iterate({
-        query: appendMutation(sessionId, b64).query,
-        variables: appendMutation(sessionId, b64).variables,
-      }).next();
+      const { query, variables } = appendMutation(sessionId, b64);
+      await client.iterate({ query, variables }).next();
     }
 
     async function stopMic() {
