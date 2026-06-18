@@ -157,11 +157,11 @@ class Session:
                 break
             except asyncio.QueueFull:
                 await asyncio.sleep(0)
+        if not self._consumer.cancelled():
+            await self._consumer
         async with self._pipeline_lock:
             await self._pipeline.finish()
         await self._event_queue.put(_EVENT_STOP)
-        if not self._consumer.cancelled():
-            await self._consumer
         await self._pipeline.aclose()
         if not self._output_closed:
             self._output_closed = True
