@@ -120,6 +120,8 @@ class Session:
                 elif isinstance(item, bytes):
                     async with self._pipeline_lock:
                         await self._pipeline.feed(item)
+            async with self._pipeline_lock:
+                await self._pipeline.finish()
             await self._event_queue.put(_EVENT_STOP)
         except asyncio.CancelledError:
             self._stopped = True
@@ -160,8 +162,6 @@ class Session:
         if self._consumer.cancelled():
             return
         await self._consumer
-        async with self._pipeline_lock:
-            await self._pipeline.finish()
         await self._pipeline.aclose()
         if not self._output_closed:
             self._output_closed = True
