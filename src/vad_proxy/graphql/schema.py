@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from typing import AsyncGenerator
 
 import strawberry
@@ -55,7 +56,6 @@ class Mutation:
         session = manager.get(str(session_id))
         if session is None:
             raise ValueError(f"unknown session: {session_id}")
-        import base64
 
         if len(audio_base64) * 3 // 4 > 1024 * 1024:
             raise ValueError("audio payload too large")
