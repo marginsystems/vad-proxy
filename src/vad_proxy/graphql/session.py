@@ -149,6 +149,7 @@ class Session:
     async def stop(self) -> None:
         if self._stopped:
             return
+        self._stopped = True
         try:
             await asyncio.wait_for(self._input_queue.put(_STOP), timeout=5.0)
         except asyncio.TimeoutError:
@@ -159,9 +160,7 @@ class Session:
                 pass
             except Exception:
                 pass
-            self._stopped = True
             return
-        self._stopped = True
         try:
             await asyncio.wait_for(self._consumer, timeout=30.0)
         except asyncio.TimeoutError:
