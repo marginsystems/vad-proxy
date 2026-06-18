@@ -30,6 +30,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "websockets>=12.0",
+    "strawberry-graphql[fastapi]>=0.230",
 ]
 
 [project.optional-dependencies]

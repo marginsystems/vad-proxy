@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vad-proxy browser voice demo</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color-scheme: light dark; }
+    body { max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input, button, textarea { width: 100%; box-sizing: border-box; margin-top: 0.35rem; }
+    button { width: auto; padding: 0.5rem 1rem; cursor: pointer; }
+    #log { white-space: pre-wrap; background: #111; color: #0f0; padding: 1rem; min-height: 12rem; border-radius: 6px; font-size: 0.9rem; }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>vad-proxy mic demo</h1>
+  <p>
+    Streams microphone audio to the GraphQL <code>/graphql</code> endpoint via
+    <code>graphql-transport-ws</code>. Audio is downsampled to 16&nbsp;kHz mono
+    Int16 PCM and sent as base64 <code>appendAudio</code> mutations.
+  </p>
+
+  <label for="url">WebSocket URL</label>
+  <input id="url" value="ws://127.0.0.1:8080/graphql" />
+
+  <label for="token">Auth token (connectionParams.token)</label>
+  <input id="token" type="password" placeholder="leave empty if server has no VAD_PROXY_AUTH_TOKEN" />
+
+  <div class="row">
+    <button id="start">Start listening</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="flush" disabled>End utterance</button>
+  </div>
+
+  <label for="log">Events</label>
+  <textarea id="log" readonly rows="14"></textarea>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/graphql-ws@5.16.0/+esm";
+
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    const append = (msg) => {
+      logEl.value += msg + "\n";
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    let client = null;
+    let disposeSub = null;
+    let sessionId = null;
+    let mediaStream = null;
+    let audioContext = null;
+    let workletNode = null;
+    let chunkTimer = null;
+    const pcmChunks = [];
+
+    const LISTEN_SUB = `subscription Listen {
+      listen(sampleRate: 16000) {
+        kind sessionId text turnComplete endPhrase startSecs endSecs sttBackend
+      }
+    }`;
+
+    const appendMutation = (sid, b64) => ({
+      query: `mutation Append($sessionId: ID!, $audio: String!) {
+        appendAudio(sessionId: $sessionId, audioBase64: $audio)
+      }`,
+      variables: { sessionId: sid, audio: b64 },
+    });
+
+    const endUtteranceMutation = (sid) => ({
+      query: `mutation End($sessionId: ID!) { endUtterance(sessionId: $sessionId) }`,
+      variables: { sessionId: sid },
+    });
+
+    const stopSessionMutation = (sid) => ({
+      query: `mutation Stop($sessionId: ID!) { stopSession(sessionId: $sessionId) }`,
+      variables: { sessionId: sid },
+    });
+
+    function floatToInt16(float32) {
+      const out = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32[i]));
+        out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      return out;
+    }
+
+    function int16ToBase64(int16) {
+      const bytes = new Uint8Array(int16.buffer, int16.byteOffset, int16.byteLength);
+      let binary = "";
+      const step = 0x8000;
+      for (let i = 0; i < bytes.length; i += step) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+      }
+      return btoa(binary);
+    }
+
+    function downsample(buffer, fromRate, toRate) {
+      if (fromRate === toRate) return buffer;
+      const ratio = fromRate / toRate;
+      const outLen = Math.floor(buffer.length / ratio);
+      const out = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const idx = i * ratio;
+        const i0 = Math.floor(idx);
+        const i1 = Math.min(i0 + 1, buffer.length - 1);
+        const frac = idx - i0;
+        out[i] = buffer[i0] * (1 - frac) + buffer[i1] * frac;
+      }
+      return out;
+    }
+
+    async function startMic() {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        video: false,
+      });
+      audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const inputRate = audioContext.sampleRate;
+      processor.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        const copy = new Float32Array(input.length);
+        copy.set(input);
+        const ds = downsample(copy, inputRate, 16000);
+        pcmChunks.push(floatToInt16(ds));
+      };
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      workletNode = processor;
+      chunkTimer = setInterval(flushAudio, 200);
+    }
+
+    async function flushAudio() {
+      if (!sessionId || !client || pcmChunks.length === 0) return;
+      const total = pcmChunks.reduce((n, c) => n + c.length, 0);
+      const merged = new Int16Array(total);
+      let off = 0;
+      for (const c of pcmChunks) {
+        merged.set(c, off);
+        off += c.length;
+      }
+      pcmChunks.length = 0;
+      const b64 = int16ToBase64(merged);
+      client.iterate({
+        query: appendMutation(sessionId, b64).query,
+        variables: appendMutation(sessionId, b64).variables,
+      }).next();
+    }
+
+    async function stopMic() {
+      clearInterval(chunkTimer);
+      chunkTimer = null;
+      if (workletNode) {
+        workletNode.disconnect();
+        workletNode = null;
+      }
+      if (audioContext) {
+        await audioContext.close();
+        audioContext = null;
+      }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        mediaStream = null;
+      }
+      pcmChunks.length = 0;
+    }
+
+    $("start").onclick = async () => {
+      const url = $("url").value.trim();
+      const token = $("token").value;
+      $("start").disabled = true;
+      sessionId = null;
+      logEl.value = "";
+
+      client = createClient({
+        url,
+        connectionParams: token ? { token } : {},
+      });
+
+      disposeSub = client.subscribe(
+        { query: LISTEN_SUB },
+        {
+          next: (msg) => {
+            const ev = msg.data?.listen;
+            if (!ev) return;
+            append(JSON.stringify(ev, null, 2));
+            if (ev.kind === "session_started" && ev.sessionId) {
+              sessionId = ev.sessionId;
+              $("stop").disabled = false;
+              $("flush").disabled = false;
+            }
+          },
+          error: (err) => append("subscription error: " + err),
+          complete: () => append("subscription complete"),
+        }
+      );
+
+      try {
+        await startMic();
+        append("mic started — speak now");
+      } catch (err) {
+        append("mic error: " + err);
+        $("start").disabled = false;
+      }
+    };
+
+    $("flush").onclick = () => {
+      if (!sessionId || !client) return;
+      client.iterate(endUtteranceMutation(sessionId)).next();
+    };
+
+    $("stop").onclick = async () => {
+      $("stop").disabled = true;
+      $("flush").disabled = true;
+      await stopMic();
+      if (sessionId && client) {
+        try {
+          for await (const _ of client.iterate(stopSessionMutation(sessionId))) {}
+        } catch (_) {}
+      }
+      if (disposeSub) disposeSub();
+      if (client) client.dispose();
+      client = null;
+      sessionId = null;
+      $("start").disabled = false;
+      append("stopped");
+    };
+  </script>
+</body>
+</html>
