@@ -63,8 +63,16 @@ class _EndUtterance:
 
 
 _END_UTTERANCE = _EndUtterance()
-_STOP = object()
-_EVENT_STOP = object()
+class _Stop:
+    pass
+
+
+class _EventStop:
+    pass
+
+
+_STOP = _Stop()
+_EVENT_STOP = _EventStop()
 
 
 def _build_session_pipeline(
@@ -83,7 +91,7 @@ class Session:
     def __init__(self, session_id: str, settings: Settings) -> None:
         self.session_id = session_id
         self.settings = settings
-        self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = asyncio.Queue()
+        self._input_queue: asyncio.Queue[bytes | _EndUtterance | _Stop] = asyncio.Queue()
         self._event_queue: asyncio.Queue[VoiceEventData | object] = asyncio.Queue()
         self._pipeline, self._original_output = _build_session_pipeline(
             settings, self._event_queue
@@ -150,13 +158,13 @@ class Session:
         async with self._stop_lock:
             if self._stopped:
                 return
-        await self._input_queue.put(pcm)
+            await self._input_queue.put(pcm)
 
     async def end_utterance(self) -> None:
         async with self._stop_lock:
             if self._stopped:
                 return
-        await self._input_queue.put(_END_UTTERANCE)
+            await self._input_queue.put(_END_UTTERANCE)
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
         while True:
@@ -173,7 +181,10 @@ class Session:
         await self._input_queue.put(_STOP)
         if self._consumer.cancelled():
             return
-        await self._consumer
+        try:
+            await self._consumer
+        except Exception:
+            _log.exception("session %s consumer failed", self.session_id)
         if not self._pipeline_closed:
             self._pipeline_closed = True
             await self._pipeline.aclose()

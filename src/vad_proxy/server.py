@@ -41,7 +41,7 @@ def _parse_allowed_origins(value: str) -> list[str]:
 def _token_ok(settings: Settings, provided: str | None) -> bool:
     expected = settings.auth_token
     if not expected:
-        return True
+        return False
     if provided is None:
         return False
     return hmac.compare_digest(str(provided), expected)
@@ -76,8 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     origins = _parse_allowed_origins(settings.allowed_origins)
     if not settings.auth_token:
         _log.warning(
-            "VAD_PROXY_AUTH_TOKEN is empty — GraphQL connections are accepted "
-            "without authentication"
+            "VAD_PROXY_AUTH_TOKEN is empty — all GraphQL connections will be "
+            "rejected (set a token to allow connections)"
         )
     app.add_middleware(
         CORSMiddleware,

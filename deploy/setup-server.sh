@@ -50,8 +50,7 @@ systemctl reload nginx
 
 if [[ ! -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
   certbot certonly --webroot -w /var/www/certbot \
-    -d "${DOMAIN}" --non-interactive --agree-tos -m "${EMAIL}" \
-    || certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "${EMAIL}"
+    -d "${DOMAIN}" --non-interactive --agree-tos -m "${EMAIL}"
   nginx -t
   systemctl reload nginx
 fi
