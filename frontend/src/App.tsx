@@ -21,7 +21,11 @@ export default function App() {
         </p>
       </header>
 
-      {session.error && <div className="error-banner">{session.error}</div>}
+      {session.error && (
+        <div className="error-toast" role="alert">
+          {session.error}
+        </div>
+      )}
 
       <ConnectionPanel
         wsUrl={wsUrl}
