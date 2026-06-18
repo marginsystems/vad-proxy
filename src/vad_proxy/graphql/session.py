@@ -93,6 +93,7 @@ class Session:
         self._stopped = False
         self._output_closed = False
         self._pipeline_lock = asyncio.Lock()
+        self._stop_lock = asyncio.Lock()
         self._consumer = asyncio.create_task(
             self._consume(), name=f"vad-session-{session_id}"
         )
@@ -151,15 +152,16 @@ class Session:
             yield event
 
     async def stop(self) -> None:
-        if self._stopped:
-            return
-        self._stopped = True
+        async with self._stop_lock:
+            if self._stopped:
+                return
+            self._stopped = True
         await self._input_queue.put(_STOP)
-        if not self._consumer.cancelled():
-            await self._consumer
+        if self._consumer.cancelled():
+            return
+        await self._consumer
         async with self._pipeline_lock:
             await self._pipeline.finish()
-        await self._event_queue.put(_EVENT_STOP)
         await self._pipeline.aclose()
         if not self._output_closed:
             self._output_closed = True
