@@ -56,14 +56,14 @@ class Mutation:
             raise ValueError(f"unknown session: {session_id}")
         import base64
 
+        if len(audio_base64) * 3 // 4 > 1024 * 1024:
+            raise ValueError("audio payload too large")
         try:
             pcm = base64.b64decode(audio_base64, validate=True)
         except Exception as exc:
             raise ValueError("invalid base64 audio payload") from exc
         if not pcm:
             return True
-        if len(pcm) > 1024 * 1024:
-            raise ValueError("audio payload too large")
         return await session.append_audio(pcm)
 
     @strawberry.mutation

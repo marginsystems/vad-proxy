@@ -239,11 +239,48 @@ async def _graphql_ws_round_trip(
                             if not wait_for_transcript:
                                 return events
                             mut_idx += 1
+                            stop_mut_id = f"mut-{mut_idx}"
                             await _send_mutation(
                                 STOP_MUTATION,
                                 {"sessionId": session_id},
-                                f"mut-{mut_idx}",
+                                stop_mut_id,
                             )
+                            stop_done = False
+                            sub_done = False
+                            while not (stop_done and sub_done):
+                                raw = await asyncio.wait_for(
+                                    ws.recv(), timeout=120
+                                )
+                                msg = json.loads(raw)
+                                if (
+                                    msg.get("type") == "complete"
+                                    and msg.get("id") == stop_mut_id
+                                ):
+                                    stop_done = True
+                                elif (
+                                    msg.get("type") == "error"
+                                    and msg.get("id") == stop_mut_id
+                                ):
+                                    raise RuntimeError(
+                                        f"STOP mutation {stop_mut_id} failed: {msg}"
+                                    )
+                                elif (
+                                    msg.get("type") == "next"
+                                    and msg.get("id") == sub_id
+                                ):
+                                    data2 = (
+                                        msg.get("payload", {})
+                                        .get("data", {})
+                                        .get("listen")
+                                    )
+                                    if data2:
+                                        events.append(data2)
+                                elif (
+                                    msg.get("type") in ("complete", "error")
+                                    and msg.get("id") == sub_id
+                                ):
+                                    sub_done = True
+                            return events
             elif mtype in ("complete", "error"):
                 if mid == sub_id:
                     if not end_sent and session_id:

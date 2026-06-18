@@ -58,7 +58,7 @@ class QueueOutputAdapter(OutputAdapter):
         )
 
     async def aclose(self) -> None:
-        pass
+        """No-op: _consume handles event-queue signalling during shutdown."""
 
 
 class _EndUtterance:
@@ -102,6 +102,10 @@ class Session:
         self._consumer = None
 
     async def _consume(self) -> None:
+        # Lock ordering: _consume acquires _stop_lock then _pipeline_lock.
+        # stop() acquires _stop_lock, releases it, awaits _consumer, then
+        # re-acquires _stop_lock — no deadlock because stop() never holds
+        # _stop_lock while awaiting _consumer.
         try:
             while True:
                 item = await self._input_queue.get()
@@ -180,15 +184,11 @@ class Session:
             self._consumer = asyncio.create_task(
                 self._consume(), name=f"vad-session-{self.session_id}"
             )
-        try:
-            while True:
-                event = await self._event_queue.get()
-                if event is _EVENT_STOP:
-                    break
-                yield event
-        finally:
-            if not self._consumer.done():
-                await self._input_queue.put(_STOP)
+        while True:
+            event = await self._event_queue.get()
+            if event is _EVENT_STOP:
+                break
+            yield event
 
     async def stop(self) -> None:
         should_send_stop = False
