@@ -313,7 +313,7 @@ async def _expect_rejected(ws_url: str, token: str) -> None:
                         pytest.fail("expected connection rejection, got connection_ack")
                     if msg.get("type") == "connection_error":
                         return
-    except (asyncio.TimeoutError, websockets.exceptions.ConnectionClosed):
+    except asyncio.TimeoutError:
         pass
     except websockets.exceptions.InvalidStatus:
         pass

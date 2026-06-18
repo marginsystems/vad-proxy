@@ -221,6 +221,7 @@ class Session:
             if not self._pipeline_closed:
                 self._pipeline_closed = True
                 async with self._pipeline_lock:
+                    await self._pipeline.finish()
                     await self._pipeline.aclose()
 
 
