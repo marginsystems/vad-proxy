@@ -64,8 +64,7 @@ class Mutation:
             return True
         if len(pcm) > 1024 * 1024:
             raise ValueError("audio payload too large")
-        await session.append_audio(pcm)
-        return True
+        return await session.append_audio(pcm)
 
     @strawberry.mutation
     async def end_utterance(
@@ -75,8 +74,7 @@ class Mutation:
         session = await manager.get(str(session_id))
         if session is None:
             raise ValueError(f"unknown session: {session_id}")
-        await session.end_utterance()
-        return True
+        return await session.end_utterance()
 
     @strawberry.mutation
     async def stop_session(

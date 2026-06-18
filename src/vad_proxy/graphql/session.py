@@ -142,7 +142,10 @@ class Session:
                 self._stopped = True
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
-                    await self._pipeline.aclose()
+                    try:
+                        await self._pipeline.aclose()
+                    except Exception:
+                        pass
             await self._event_queue.put(_EVENT_STOP)
             raise
         except Exception:
@@ -150,22 +153,27 @@ class Session:
                 self._stopped = True
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
-                    await self._pipeline.aclose()
+                    try:
+                        await self._pipeline.aclose()
+                    except Exception:
+                        pass
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
             raise
 
-    async def append_audio(self, pcm: bytes) -> None:
+    async def append_audio(self, pcm: bytes) -> bool:
         async with self._stop_lock:
             if self._stopped:
-                return
+                return False
             await self._input_queue.put(pcm)
+        return True
 
-    async def end_utterance(self) -> None:
+    async def end_utterance(self) -> bool:
         async with self._stop_lock:
             if self._stopped:
-                return
+                return False
             await self._input_queue.put(_END_UTTERANCE)
+        return True
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
         if self._consumer is None:
