@@ -21,8 +21,6 @@ apt-get install -y -qq nginx certbot python3-certbot-nginx ufw curl
 mkdir -p /var/www/certbot
 install -m 0644 "${SCRIPT_DIR}/nginx/${NGINX_SITE}" \
   "/etc/nginx/sites-available/${NGINX_SITE}"
-ln -sf "/etc/nginx/sites-available/${NGINX_SITE}" \
-  "/etc/nginx/sites-enabled/${NGINX_SITE}"
 rm -f /etc/nginx/sites-enabled/default
 
 # If certs are missing, use a temporary HTTP-only bootstrap so nginx -t passes.
@@ -59,6 +57,9 @@ if [[ ! -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
   nginx -t
   systemctl reload nginx
 fi
+
+ln -sf "/etc/nginx/sites-available/${NGINX_SITE}" \
+  "/etc/nginx/sites-enabled/${NGINX_SITE}"
 
 # --- ufw: preserve SSH, allow 80/443 only ---------------------------------
 SSH_PORT="$(ss -tlnp 2>/dev/null | awk '/sshd/ && /LISTEN/ {split($4,a,":"); print a[length(a)]; exit}')"

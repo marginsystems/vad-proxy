@@ -133,6 +133,8 @@ class Session:
             await self._event_queue.put(_EVENT_STOP)
 
     async def append_audio(self, pcm: bytes) -> None:
+        if self._stopped:
+            return
         await self._input_queue.put(pcm)
 
     async def end_utterance(self) -> None:
@@ -151,12 +153,7 @@ class Session:
         if self._stopped:
             return
         self._stopped = True
-        while True:
-            try:
-                self._input_queue.put_nowait(_STOP)
-                break
-            except asyncio.QueueFull:
-                await asyncio.sleep(0)
+        await self._input_queue.put(_STOP)
         if not self._consumer.cancelled():
             await self._consumer
         async with self._pipeline_lock:
