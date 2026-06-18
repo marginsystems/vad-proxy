@@ -173,9 +173,10 @@ class SessionManager:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._lock = asyncio.Lock()
         self._sessions: dict[str, Session] = {}
 
-    def create_session(self, sample_rate: int | None = None) -> Session:
+    async def create_session(self, sample_rate: int | None = None) -> Session:
         if sample_rate is not None and sample_rate != self.settings.sample_rate:
             _log.warning(
                 "listen(sample_rate=%s) ignored; server runs at %s",
@@ -184,14 +185,17 @@ class SessionManager:
             )
         session_id = str(uuid.uuid4())
         session = Session(session_id, self.settings)
-        self._sessions[session_id] = session
+        async with self._lock:
+            self._sessions[session_id] = session
         return session
 
-    def get(self, session_id: str) -> Session | None:
-        return self._sessions.get(session_id)
+    async def get(self, session_id: str) -> Session | None:
+        async with self._lock:
+            return self._sessions.get(session_id)
 
     async def stop_session(self, session_id: str) -> bool:
-        session = self._sessions.pop(session_id, None)
+        async with self._lock:
+            session = self._sessions.pop(session_id, None)
         if session is None:
             return False
         await session.stop()

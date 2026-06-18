@@ -51,7 +51,7 @@ class Mutation:
         audio_base64: str,
     ) -> bool:
         manager: SessionManager = info.context["session_manager"]
-        session = manager.get(str(session_id))
+        session = await manager.get(str(session_id))
         if session is None:
             raise ValueError(f"unknown session: {session_id}")
         import base64
@@ -70,7 +70,7 @@ class Mutation:
         self, info: strawberry.Info, session_id: strawberry.ID
     ) -> bool:
         manager: SessionManager = info.context["session_manager"]
-        session = manager.get(str(session_id))
+        session = await manager.get(str(session_id))
         if session is None:
             raise ValueError(f"unknown session: {session_id}")
         await session.end_utterance()
@@ -91,7 +91,7 @@ class Subscription:
         self, info: strawberry.Info, sample_rate: int = 16000
     ) -> AsyncGenerator[VoiceEvent, None]:
         manager: SessionManager = info.context["session_manager"]
-        session = manager.create_session(sample_rate)
+        session = await manager.create_session(sample_rate)
         yield VoiceEvent(
             kind="session_started",
             session_id=strawberry.ID(session.session_id),
