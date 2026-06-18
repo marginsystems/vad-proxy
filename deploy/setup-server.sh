@@ -65,6 +65,7 @@ if [[ -z "${SSH_PORT}" ]]; then
   SSH_PORT="$(grep -E '^Port[[:space:]]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tail -1)"
 fi
 SSH_PORT="${SSH_PORT:-22}"
+echo "Detected SSH port: ${SSH_PORT}"
 
 ufw --force reset
 ufw default deny incoming
