@@ -209,10 +209,8 @@ async def _expect_rejected(ws_url: str, token: str) -> None:
                 if msg.get("type") == "connection_error":
                     return
     except websockets.exceptions.ConnectionClosed as exc:
-        if exc.code is not None:
-            assert exc.code == 4403
-    except asyncio.TimeoutError:
-        pass
+        code = exc.rcvd.code if exc.rcvd is not None else exc.code
+        assert code == 4403
 
 
 @pytest.mark.skipif(not TEST_AUDIO.exists(), reason="bundled test audio missing")

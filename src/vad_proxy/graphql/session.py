@@ -119,25 +119,21 @@ class Session:
                 pass
             self._event_queue.put_nowait(_EVENT_STOP)
 
-    async def append_audio(self, pcm: bytes) -> None:
+    def _enqueue(self, item: bytes | _EndUtterance) -> None:
         if self._stopped:
             raise ValueError(f"session {self.session_id} has stopped")
         try:
-            self._input_queue.put_nowait(pcm)
+            self._input_queue.put_nowait(item)
         except asyncio.QueueFull as exc:
             raise ValueError(
                 f"session {self.session_id} audio buffer full, retry"
             ) from exc
 
+    async def append_audio(self, pcm: bytes) -> None:
+        self._enqueue(pcm)
+
     async def end_utterance(self) -> None:
-        if self._stopped:
-            raise ValueError(f"session {self.session_id} has stopped")
-        try:
-            self._input_queue.put_nowait(_END_UTTERANCE)
-        except asyncio.QueueFull as exc:
-            raise ValueError(
-                f"session {self.session_id} audio buffer full, retry"
-            ) from exc
+        self._enqueue(_END_UTTERANCE)
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
         while True:
@@ -145,6 +141,16 @@ class Session:
             if event is _EVENT_STOP:
                 break
             yield event
+
+    async def _join_consumer(self) -> None:
+        try:
+            await asyncio.wait_for(self._consumer, timeout=30.0)
+        except asyncio.TimeoutError:
+            self._consumer.cancel()
+        try:
+            await self._consumer
+        except asyncio.CancelledError:
+            pass
 
     async def stop(self) -> None:
         if self._stopped:
@@ -154,25 +160,7 @@ class Session:
             await asyncio.wait_for(self._input_queue.put(_STOP), timeout=5.0)
         except asyncio.TimeoutError:
             self._consumer.cancel()
-            try:
-                await self._consumer
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
-            return
-        try:
-            await asyncio.wait_for(self._consumer, timeout=30.0)
-        except asyncio.TimeoutError:
-            self._consumer.cancel()
-            try:
-                await self._consumer
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
-        except (Exception, asyncio.CancelledError):
-            pass
+        await self._join_consumer()
 
 
 class SessionManager:
