@@ -50,12 +50,6 @@ mutation End($sessionId: ID!) {
 }
 """
 
-STOP_MUTATION = """
-mutation Stop($sessionId: ID!) {
-  stopSession(sessionId: $sessionId)
-}
-"""
-
 
 def _wait_for_health(port: int, timeout: float = 30.0) -> None:
     deadline = time.time() + timeout
@@ -81,6 +75,12 @@ def _pcm_chunks(path: Path, chunk_samples: int = 8000) -> list[str]:
     return chunks
 
 
+def _listen_event(msg: dict, sub_id: str) -> dict | None:
+    if msg.get("type") != "next" or msg.get("id") != sub_id:
+        return None
+    return msg.get("payload", {}).get("data", {}).get("listen")
+
+
 async def _graphql_ws_round_trip(
     ws_url: str,
     token: str | None,
@@ -88,14 +88,13 @@ async def _graphql_ws_round_trip(
     *,
     wait_for_transcript: bool = True,
 ) -> list[dict]:
-    """Run listen + appendAudio over graphql-transport-ws; return transcript events."""
-    subprotocol = "graphql-transport-ws"
+    """Run listen + appendAudio over graphql-transport-ws; return events."""
     events: list[dict] = []
     session_id: str | None = None
 
     async with websockets.connect(
         ws_url,
-        subprotocols=[subprotocol],
+        subprotocols=["graphql-transport-ws"],
         open_timeout=10,
     ) as ws:
         await ws.send(
@@ -139,6 +138,7 @@ async def _graphql_ws_round_trip(
         mut_idx = 0
         audio_sent = False
         end_sent = False
+        pending_muts: set[str] = set()
 
         while True:
             raw = await asyncio.wait_for(ws.recv(), timeout=120)
@@ -146,151 +146,47 @@ async def _graphql_ws_round_trip(
             mtype = msg.get("type")
             mid = msg.get("id")
 
-            if mtype == "next" and mid == sub_id:
-                data = msg.get("payload", {}).get("data", {}).get("listen")
-                if data:
-                    events.append(data)
-                    if data.get("kind") == "session_started":
-                        session_id = data.get("sessionId")
-                        if session_id and not audio_sent:
-                            for chunk in audio_chunks:
-                                mut_idx += 1
-                                await _send_mutation(
-                                    APPEND_MUTATION,
-                                    {
-                                        "sessionId": session_id,
-                                        "audio": chunk,
-                                    },
-                                    f"mut-{mut_idx}",
-                                )
-                            # Wait for all audio mutations to complete on the
-                            # server before sending END so the pipeline has
-                            # consumed the audio before endUtterance flushes.
-                            pending_muts = {
-                                f"mut-{i}" for i in range(1, mut_idx + 1)
-                            }
-                            while pending_muts:
-                                raw = await asyncio.wait_for(
-                                    ws.recv(), timeout=120
-                                )
-                                msg = json.loads(raw)
-                                mtype, rid = (
-                                    msg.get("type"),
-                                    msg.get("id"),
-                                )
-                                if mtype == "complete" and rid in pending_muts:
-                                    pending_muts.discard(rid)
-                                elif mtype == "error" and rid in pending_muts:
-                                    raise RuntimeError(
-                                        f"mutation {rid} failed: {msg}"
-                                    )
-                                elif mtype == "next" and rid == sub_id:
-                                    data2 = (
-                                        msg.get("payload", {})
-                                        .get("data", {})
-                                        .get("listen")
-                                    )
-                                    if data2:
-                                        events.append(data2)
-                                elif mtype in ("complete", "error") and rid == sub_id:
-                                    return events
+            data = _listen_event(msg, sub_id)
+            if data:
+                events.append(data)
+                if data.get("kind") == "session_started" and not audio_sent:
+                    session_id = data.get("sessionId")
+                    if session_id:
+                        for chunk in audio_chunks:
                             mut_idx += 1
-                            end_mut_id = f"mut-{mut_idx}"
+                            mut_id = f"mut-{mut_idx}"
+                            pending_muts.add(mut_id)
                             await _send_mutation(
-                                END_MUTATION,
-                                {"sessionId": session_id},
-                                end_mut_id,
+                                APPEND_MUTATION,
+                                {"sessionId": session_id, "audio": chunk},
+                                mut_id,
                             )
-                            sub_done_in_end = False
-                            while True:
-                                raw = await asyncio.wait_for(
-                                    ws.recv(), timeout=120
-                                )
-                                msg = json.loads(raw)
-                                if (
-                                    msg.get("type") == "complete"
-                                    and msg.get("id") == end_mut_id
-                                ):
-                                    break
-                                if (
-                                    msg.get("type") == "error"
-                                    and msg.get("id") == end_mut_id
-                                ):
-                                    raise RuntimeError(
-                                        f"END mutation {end_mut_id} failed: {msg}"
-                                    )
-                                if msg.get("type") == "next" and msg.get("id") == sub_id:
-                                    data2 = (
-                                        msg.get("payload", {})
-                                        .get("data", {})
-                                        .get("listen")
-                                    )
-                                    if data2:
-                                        events.append(data2)
-                                if (
-                                    msg.get("type") in ("complete", "error")
-                                    and msg.get("id") == sub_id
-                                ):
-                                    sub_done_in_end = True
-                                    break
-                            audio_sent = True
-                            end_sent = True
-                            if not wait_for_transcript:
-                                return events
-                            mut_idx += 1
-                            stop_mut_id = f"mut-{mut_idx}"
-                            await _send_mutation(
-                                STOP_MUTATION,
-                                {"sessionId": session_id},
-                                stop_mut_id,
-                            )
-                            stop_done = False
-                            sub_done = sub_done_in_end
-                            while not (stop_done and sub_done):
-                                raw = await asyncio.wait_for(
-                                    ws.recv(), timeout=120
-                                )
-                                msg = json.loads(raw)
-                                if (
-                                    msg.get("type") == "complete"
-                                    and msg.get("id") == stop_mut_id
-                                ):
-                                    stop_done = True
-                                elif (
-                                    msg.get("type") == "error"
-                                    and msg.get("id") == stop_mut_id
-                                ):
-                                    raise RuntimeError(
-                                        f"STOP mutation {stop_mut_id} failed: {msg}"
-                                    )
-                                elif (
-                                    msg.get("type") == "next"
-                                    and msg.get("id") == sub_id
-                                ):
-                                    data2 = (
-                                        msg.get("payload", {})
-                                        .get("data", {})
-                                        .get("listen")
-                                    )
-                                    if data2:
-                                        events.append(data2)
-                                elif (
-                                    msg.get("type") in ("complete", "error")
-                                    and msg.get("id") == sub_id
-                                ):
-                                    sub_done = True
+                        audio_sent = True
+                        if not wait_for_transcript:
                             return events
-            elif mtype in ("complete", "error"):
-                if mid == sub_id:
-                    if not end_sent and session_id:
-                        end_sent = True
-                        mut_idx += 1
-                        await _send_mutation(
-                            STOP_MUTATION,
-                            {"sessionId": session_id},
-                            f"mut-{mut_idx}",
-                        )
+                elif data.get("kind") == "transcript":
                     return events
+
+            if mtype == "complete" and mid in pending_muts:
+                pending_muts.discard(mid)
+                if (
+                    wait_for_transcript
+                    and audio_sent
+                    and not end_sent
+                    and not pending_muts
+                    and session_id
+                ):
+                    end_sent = True
+                    mut_idx += 1
+                    await _send_mutation(
+                        END_MUTATION,
+                        {"sessionId": session_id},
+                        f"mut-{mut_idx}",
+                    )
+            elif mtype == "error" and mid in pending_muts:
+                raise RuntimeError(f"mutation {mid} failed: {msg}")
+            elif mtype in ("complete", "error") and mid == sub_id:
+                return events
 
     return events
 
@@ -307,18 +203,13 @@ async def _expect_rejected(ws_url: str, token: str) -> None:
             )
             while True:
                 raw = await asyncio.wait_for(ws.recv(), timeout=10)
-                if raw:
-                    msg = json.loads(raw)
-                    if msg.get("type") == "connection_ack":
-                        pytest.fail("expected connection rejection, got connection_ack")
-                    if msg.get("type") == "connection_error":
-                        return
-    except asyncio.TimeoutError:
-        pass
-    except websockets.exceptions.InvalidStatus:
-        pass
-    except websockets.exceptions.ConnectionClosed:
-        pass
+                msg = json.loads(raw)
+                if msg.get("type") == "connection_ack":
+                    pytest.fail("expected connection rejection, got connection_ack")
+                if msg.get("type") == "connection_error":
+                    return
+    except websockets.exceptions.ConnectionClosed as exc:
+        assert exc.code == 4403
 
 
 @pytest.mark.skipif(not TEST_AUDIO.exists(), reason="bundled test audio missing")
@@ -348,7 +239,6 @@ def test_graphql_ws_transcript_and_auth():
         ws_url = f"ws://127.0.0.1:{port}/graphql"
         chunks = _pcm_chunks(TEST_AUDIO)
 
-        # Bad token should be rejected.
         asyncio.run(_expect_rejected(ws_url, "wrong-token"))
 
         last_events: list[dict] = []

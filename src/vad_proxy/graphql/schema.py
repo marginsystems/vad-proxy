@@ -52,7 +52,7 @@ class Mutation:
         audio_base64: str,
     ) -> bool:
         manager: SessionManager = info.context["session_manager"]
-        session = await manager.get(str(session_id))
+        session = manager.get(str(session_id))
         if session is None:
             raise ValueError(f"unknown session: {session_id}")
         import base64
@@ -65,11 +65,7 @@ class Mutation:
             raise ValueError("invalid base64 audio payload") from exc
         if not pcm:
             return True
-        try:
-            if not await session.append_audio(pcm):
-                raise ValueError(f"session {session_id} has already stopped")
-        except asyncio.QueueFull:
-            raise ValueError(f"session {session_id} audio buffer full, retry")
+        await session.append_audio(pcm)
         return True
 
     @strawberry.mutation
@@ -77,11 +73,10 @@ class Mutation:
         self, info: strawberry.Info, session_id: strawberry.ID
     ) -> bool:
         manager: SessionManager = info.context["session_manager"]
-        session = await manager.get(str(session_id))
+        session = manager.get(str(session_id))
         if session is None:
             raise ValueError(f"unknown session: {session_id}")
-        if not await session.end_utterance():
-            raise ValueError(f"session {session_id} has already stopped")
+        await session.end_utterance()
         return True
 
     @strawberry.mutation
@@ -101,7 +96,7 @@ class Subscription:
         manager: SessionManager = info.context["session_manager"]
         session = None
         try:
-            session = await manager.create_session(sample_rate)
+            session = manager.create_session(sample_rate)
             yield VoiceEvent(
                 kind="session_started",
                 session_id=strawberry.ID(session.session_id),
