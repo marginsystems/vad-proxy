@@ -256,8 +256,11 @@ input:focus {
 }
 
 .health-message {
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
   min-width: 0;
+  height: 1.5rem;
   color: var(--text-danger);
   overflow: hidden;
   text-overflow: ellipsis;
