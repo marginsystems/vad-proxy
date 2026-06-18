@@ -105,7 +105,8 @@ class Session:
             raise
         except Exception:
             _log.exception("session %s consumer failed", self.session_id)
-            raise
+            await self._event_queue.put(None)
+            self._stopped = True
 
     async def append_audio(self, pcm: bytes) -> None:
         if self._stopped:
@@ -127,11 +128,11 @@ class Session:
     async def stop(self) -> None:
         if self._stopped:
             return
-        self._event_queue.put_nowait(None)
+        await self._pipeline.finish()
+        await self._event_queue.put(None)
         self._stopped = True
         await self._input_queue.put(_STOP)
         await self._consumer
-        await self._pipeline.finish()
         await self._pipeline.aclose()
 
 
