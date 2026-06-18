@@ -95,7 +95,7 @@ class Session:
         try:
             while True:
                 item = await self._input_queue.get()
-                if item is _STOP:
+                if item is _STOP or self._stopped:
                     break
                 if item is _END_UTTERANCE:
                     await self._pipeline.finish()
@@ -109,8 +109,6 @@ class Session:
             self._stopped = True
 
     async def append_audio(self, pcm: bytes) -> None:
-        if self._stopped:
-            raise ValueError(f"session {self.session_id} is stopped")
         await self._input_queue.put(pcm)
 
     async def end_utterance(self) -> None:
@@ -126,12 +124,11 @@ class Session:
             yield event
 
     async def stop(self) -> None:
-        if self._stopped:
-            return
-        await self._pipeline.finish()
-        await self._event_queue.put(None)
-        self._stopped = True
-        await self._input_queue.put(_STOP)
+        if not self._stopped:
+            await self._pipeline.finish()
+            await self._event_queue.put(None)
+            self._stopped = True
+            await self._input_queue.put(_STOP)
         await self._consumer
         await self._pipeline.aclose()
 
