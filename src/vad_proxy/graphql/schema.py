@@ -65,8 +65,11 @@ class Mutation:
             raise ValueError("invalid base64 audio payload") from exc
         if not pcm:
             return True
-        if not await session.append_audio(pcm):
-            raise ValueError(f"session {session_id} has already stopped")
+        try:
+            if not await session.append_audio(pcm):
+                raise ValueError(f"session {session_id} has already stopped")
+        except asyncio.QueueFull:
+            raise ValueError(f"session {session_id} audio buffer full, retry")
         return True
 
     @strawberry.mutation
