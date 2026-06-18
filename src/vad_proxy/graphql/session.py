@@ -80,18 +80,11 @@ _EVENT_STOP = _EventStop()
 
 def _build_session_pipeline(
     settings: Settings, event_queue: asyncio.Queue[VoiceEventData]
-) -> tuple[VadProxyPipeline, OutputAdapter]:
+) -> tuple[VadProxyPipeline, OutputAdapter | None]:
     """Build a pipeline whose output adapter feeds ``event_queue``."""
-    base = build_pipeline(settings)
-    old_output = base.c.output
-    if not isinstance(old_output, QueueOutputAdapter):
-        _log.warning(
-            "Configured output adapter %s will be bypassed for GraphQL sessions; "
-            "transcripts are delivered via the subscription stream instead.",
-            type(old_output).__name__,
-        )
-    base.c.output = QueueOutputAdapter(event_queue)
-    return base, old_output
+    queue_output = QueueOutputAdapter(event_queue)
+    base = build_pipeline(settings, output=queue_output)
+    return base, None
 
 
 class Session:
@@ -147,7 +140,7 @@ class Session:
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
                     await self._pipeline.aclose()
-                if not self._output_closed:
+                if self._original_output is not None and not self._output_closed:
                     self._output_closed = True
                     await self._original_output.aclose()
         except asyncio.CancelledError:
@@ -156,7 +149,7 @@ class Session:
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
                     await self._pipeline.aclose()
-                if not self._output_closed:
+                if self._original_output is not None and not self._output_closed:
                     self._output_closed = True
                     await self._original_output.aclose()
             await self._event_queue.put(_EVENT_STOP)
@@ -167,7 +160,7 @@ class Session:
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
                     await self._pipeline.aclose()
-                if not self._output_closed:
+                if self._original_output is not None and not self._output_closed:
                     self._output_closed = True
                     await self._original_output.aclose()
             _log.exception("session %s consumer failed", self.session_id)
@@ -218,7 +211,7 @@ class Session:
             if not self._pipeline_closed:
                 self._pipeline_closed = True
                 await self._pipeline.aclose()
-            if not self._output_closed:
+            if self._original_output is not None and not self._output_closed:
                 self._output_closed = True
                 await self._original_output.aclose()
 
