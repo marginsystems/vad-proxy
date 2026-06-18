@@ -133,6 +133,12 @@ class Session:
             async with self._pipeline_lock:
                 await self._pipeline.finish()
             await self._event_queue.put(_EVENT_STOP)
+            if not self._pipeline_closed:
+                self._pipeline_closed = True
+                await self._pipeline.aclose()
+            if not self._output_closed:
+                self._output_closed = True
+                await self._original_output.aclose()
         except asyncio.CancelledError:
             self._stopped = True
             await self._event_queue.put(_EVENT_STOP)
@@ -153,6 +159,7 @@ class Session:
             if not self._output_closed:
                 self._output_closed = True
                 await self._original_output.aclose()
+            raise
 
     async def append_audio(self, pcm: bytes) -> None:
         async with self._stop_lock:
