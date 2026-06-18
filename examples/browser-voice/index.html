@@ -131,7 +131,7 @@
       };
       source.connect(processor);
       workletNode = processor;
-      chunkTimer = setInterval(flushAudio, 200);
+      chunkTimer = setTimeout(scheduleFlush, 200);
     }
 
     async function flushAudio() {
@@ -150,9 +150,15 @@
       await client.iterate({ query, variables }).next();
     }
 
+    async function scheduleFlush() {
+      if (stopping) return;
+      await flushAudio();
+      chunkTimer = setTimeout(scheduleFlush, 200);
+    }
+
     async function stopMic() {
       stopping = true;
-      clearInterval(chunkTimer);
+      clearTimeout(chunkTimer);
       chunkTimer = null;
       if (workletNode) {
         workletNode.disconnect();

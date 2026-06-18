@@ -119,7 +119,6 @@ class Session:
                         await self._pipeline.feed(item)
             # Drain any items that arrived after _STOP (TOCTOU race with
             # append_audio).
-            _did_drain_end = False
             while True:
                 try:
                     item = self._input_queue.get_nowait()
@@ -128,13 +127,11 @@ class Session:
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
                         await self._pipeline.finish()
-                    _did_drain_end = True
                 elif isinstance(item, bytes):
                     async with self._pipeline_lock:
                         await self._pipeline.feed(item)
-            if not _did_drain_end:
-                async with self._pipeline_lock:
-                    await self._pipeline.finish()
+            async with self._pipeline_lock:
+                await self._pipeline.finish()
             await self._event_queue.put(_EVENT_STOP)
             async with self._stop_lock:
                 if not self._pipeline_closed:
