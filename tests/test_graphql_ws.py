@@ -170,14 +170,16 @@ async def _graphql_ws_round_trip(
                     if data.get("kind") == "transcript":
                         return events
             elif mtype in ("complete", "error"):
-                if mid == sub_id and not end_sent and session_id:
-                    end_sent = True
-                    mut_idx += 1
-                    await _send_mutation(
-                        END_MUTATION,
-                        {"sessionId": session_id},
-                        f"mut-{mut_idx}",
-                    )
+                if mid == sub_id:
+                    if not end_sent and session_id:
+                        end_sent = True
+                        mut_idx += 1
+                        await _send_mutation(
+                            END_MUTATION,
+                            {"sessionId": session_id},
+                            f"mut-{mut_idx}",
+                        )
+                    return events
 
     return events
 

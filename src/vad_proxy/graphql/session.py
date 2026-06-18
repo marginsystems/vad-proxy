@@ -91,6 +91,7 @@ class Session:
             settings, self._event_queue
         )
         self._stopped = False
+        self._output_closed = False
         self._pipeline_lock = asyncio.Lock()
         self._consumer = asyncio.create_task(
             self._consume(), name=f"vad-session-{session_id}"
@@ -100,7 +101,7 @@ class Session:
         try:
             while True:
                 item = await self._input_queue.get()
-                if item is _STOP or self._stopped:
+                if item is _STOP:
                     break
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
@@ -117,9 +118,9 @@ class Session:
             self._stopped = True
 
     async def append_audio(self, pcm: bytes) -> None:
-        await self._input_queue.put(pcm)
         if self._stopped:
             raise RuntimeError("session stopped")
+        await self._input_queue.put(pcm)
 
     async def end_utterance(self) -> None:
         if self._stopped:
@@ -143,7 +144,9 @@ class Session:
         await self._event_queue.put(_EVENT_STOP)
         await self._consumer
         await self._pipeline.aclose()
-        await self._original_output.aclose()
+        if not self._output_closed:
+            self._output_closed = True
+            await self._original_output.aclose()
 
 
 class SessionManager:
