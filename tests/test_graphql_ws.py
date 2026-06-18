@@ -317,6 +317,8 @@ async def _expect_rejected(ws_url: str, token: str) -> None:
         pass
     except websockets.exceptions.InvalidStatus:
         pass
+    except websockets.exceptions.ConnectionClosed:
+        pass
 
 
 @pytest.mark.skipif(not TEST_AUDIO.exists(), reason="bundled test audio missing")
