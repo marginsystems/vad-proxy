@@ -136,7 +136,7 @@ class Session:
                         await self._pipeline.feed(item)
             async with self._pipeline_lock:
                 await self._pipeline.finish()
-            await self._event_queue.put(_EVENT_STOP)
+            self._event_queue.put_nowait(_EVENT_STOP)
             async with self._stop_lock:
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
@@ -150,7 +150,7 @@ class Session:
                         await self._pipeline.aclose()
                     except Exception:
                         pass
-            await self._event_queue.put(_EVENT_STOP)
+            self._event_queue.put_nowait(_EVENT_STOP)
             raise
         except Exception:
             async with self._stop_lock:
@@ -179,8 +179,11 @@ class Session:
         async with self._stop_lock:
             if self._stopped:
                 return False
-        await self._input_queue.put(_END_UTTERANCE)
-        return True
+            try:
+                self._input_queue.put_nowait(_END_UTTERANCE)
+            except asyncio.QueueFull:
+                return False
+            return True
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
         if self._consumer is None:
