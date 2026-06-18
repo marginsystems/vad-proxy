@@ -144,13 +144,15 @@ class Session:
                 await self._original_output.aclose()
 
     async def append_audio(self, pcm: bytes) -> None:
-        if self._stopped:
-            return
+        async with self._stop_lock:
+            if self._stopped:
+                return
         await self._input_queue.put(pcm)
 
     async def end_utterance(self) -> None:
-        if self._stopped:
-            return
+        async with self._stop_lock:
+            if self._stopped:
+                return
         await self._input_queue.put(_END_UTTERANCE)
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:

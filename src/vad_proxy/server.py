@@ -74,7 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="vad-proxy", version="0.1.0")
 
     origins = _parse_allowed_origins(settings.allowed_origins)
-    if not settings.auth_token and "*" not in origins:
+    if not settings.auth_token:
         _log.warning(
             "VAD_PROXY_AUTH_TOKEN is empty — GraphQL connections are accepted "
             "without authentication"
