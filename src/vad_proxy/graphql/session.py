@@ -128,6 +128,7 @@ class Session:
                 await self._original_output.aclose()
             raise
         except Exception:
+            self._stopped = True
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
 
