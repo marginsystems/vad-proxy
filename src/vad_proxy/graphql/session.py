@@ -83,9 +83,7 @@ class Session:
     def __init__(self, session_id: str, settings: Settings) -> None:
         self.session_id = session_id
         self.settings = settings
-        self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = (
-            asyncio.Queue(maxsize=100)
-        )
+        self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = asyncio.Queue()
         self._event_queue: asyncio.Queue[VoiceEventData | object] = asyncio.Queue()
         self._pipeline, self._original_output = _build_session_pipeline(
             settings, self._event_queue
