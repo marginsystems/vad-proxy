@@ -151,6 +151,8 @@ class Session:
             await self._consumer
         except asyncio.CancelledError:
             pass
+        except Exception:
+            pass
 
     async def stop(self) -> None:
         if self._stopped:
