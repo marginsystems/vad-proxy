@@ -127,24 +127,23 @@ class Session:
         await self._input_queue.put(_END_UTTERANCE)
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
-        while not self._stopped:
+        while True:
             event = await self._event_queue.get()
             if event is _EVENT_STOP:
                 break
             yield event
 
     async def stop(self) -> None:
-        if not self._stopped:
-            self._stopped = True
-            await self._input_queue.put(_STOP)
-            async with self._pipeline_lock:
-                await self._pipeline.finish()
-            await self._event_queue.put(_EVENT_STOP)
-        try:
-            await self._consumer
-        finally:
-            await self._pipeline.aclose()
-            await self._original_output.aclose()
+        if self._stopped:
+            return
+        self._stopped = True
+        await self._input_queue.put(_STOP)
+        async with self._pipeline_lock:
+            await self._pipeline.finish()
+        await self._event_queue.put(_EVENT_STOP)
+        await self._consumer
+        await self._pipeline.aclose()
+        await self._original_output.aclose()
 
 
 class SessionManager:
