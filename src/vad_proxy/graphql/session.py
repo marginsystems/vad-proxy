@@ -122,6 +122,8 @@ class Session:
                     item = self._input_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
+                if item is _STOP:
+                    break
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
                         await self._pipeline.finish()
