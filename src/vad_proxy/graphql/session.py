@@ -127,9 +127,9 @@ class Session:
     async def stop(self) -> None:
         if self._stopped:
             return
+        self._event_queue.put_nowait(None)
         self._stopped = True
         await self._input_queue.put(_STOP)
-        self._event_queue.put_nowait(None)
         await self._consumer
         await self._pipeline.finish()
         await self._pipeline.aclose()

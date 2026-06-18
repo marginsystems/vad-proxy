@@ -227,10 +227,7 @@ def test_graphql_ws_transcript_and_auth():
         chunks = _pcm_chunks(TEST_AUDIO)
 
         # Bad token should be rejected.
-        try:
-            asyncio.run(_expect_rejected(ws_url, "wrong-token"))
-        except websockets.exceptions.ConnectionClosed as exc:
-            assert exc.code == 4403
+        asyncio.run(_expect_rejected(ws_url, "wrong-token"))
 
         last_events: list[dict] = []
         for _ in range(MAX_ATTEMPTS):
