@@ -80,11 +80,10 @@ _EVENT_STOP = _EventStop()
 
 def _build_session_pipeline(
     settings: Settings, event_queue: asyncio.Queue[VoiceEventData]
-) -> tuple[VadProxyPipeline, OutputAdapter | None]:
+) -> VadProxyPipeline:
     """Build a pipeline whose output adapter feeds ``event_queue``."""
     queue_output = QueueOutputAdapter(event_queue)
-    base = build_pipeline(settings, output=queue_output)
-    return base, None
+    return build_pipeline(settings, output=queue_output)
 
 
 class Session:
@@ -95,11 +94,8 @@ class Session:
         self.settings = settings
         self._input_queue: asyncio.Queue[bytes | _EndUtterance | _Stop] = asyncio.Queue()
         self._event_queue: asyncio.Queue[VoiceEventData | object] = asyncio.Queue()
-        self._pipeline, self._original_output = _build_session_pipeline(
-            settings, self._event_queue
-        )
+        self._pipeline = _build_session_pipeline(settings, self._event_queue)
         self._stopped = False
-        self._output_closed = False
         self._pipeline_closed = False
         self._pipeline_lock = asyncio.Lock()
         self._stop_lock = asyncio.Lock()
@@ -137,18 +133,12 @@ class Session:
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
                     await self._pipeline.aclose()
-                if self._original_output is not None and not self._output_closed:
-                    self._output_closed = True
-                    await self._original_output.aclose()
         except asyncio.CancelledError:
             async with self._stop_lock:
                 self._stopped = True
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
                     await self._pipeline.aclose()
-                if self._original_output is not None and not self._output_closed:
-                    self._output_closed = True
-                    await self._original_output.aclose()
             await self._event_queue.put(_EVENT_STOP)
             raise
         except Exception:
@@ -157,9 +147,6 @@ class Session:
                 if not self._pipeline_closed:
                     self._pipeline_closed = True
                     await self._pipeline.aclose()
-                if self._original_output is not None and not self._output_closed:
-                    self._output_closed = True
-                    await self._original_output.aclose()
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
             raise
@@ -208,9 +195,6 @@ class Session:
             if not self._pipeline_closed:
                 self._pipeline_closed = True
                 await self._pipeline.aclose()
-            if self._original_output is not None and not self._output_closed:
-                self._output_closed = True
-                await self._original_output.aclose()
 
 
 class SessionManager:
