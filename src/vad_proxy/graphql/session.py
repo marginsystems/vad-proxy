@@ -172,11 +172,11 @@ class Session:
         async with self._stop_lock:
             if self._stopped:
                 return False
-        try:
-            self._input_queue.put_nowait(pcm)
-        except asyncio.QueueFull:
-            return False
-        return True
+            try:
+                self._input_queue.put_nowait(pcm)
+            except asyncio.QueueFull:
+                return False
+            return True
 
     async def end_utterance(self) -> bool:
         async with self._stop_lock:
@@ -222,7 +222,8 @@ class Session:
         async with self._stop_lock:
             if not self._pipeline_closed:
                 self._pipeline_closed = True
-                await self._pipeline.aclose()
+                async with self._pipeline_lock:
+                    await self._pipeline.aclose()
 
 
 class SessionManager:
