@@ -187,11 +187,44 @@ async def _graphql_ws_round_trip(
                                     if data2:
                                         events.append(data2)
                             mut_idx += 1
+                            end_mut_id = f"mut-{mut_idx}"
                             await _send_mutation(
                                 END_MUTATION,
                                 {"sessionId": session_id},
-                                f"mut-{mut_idx}",
+                                end_mut_id,
                             )
+                            while True:
+                                raw = await asyncio.wait_for(
+                                    ws.recv(), timeout=120
+                                )
+                                msg = json.loads(raw)
+                                if (
+                                    msg.get("type") == "complete"
+                                    and msg.get("id") == end_mut_id
+                                ):
+                                    break
+                                if (
+                                    msg.get("type") == "error"
+                                    and msg.get("id") == end_mut_id
+                                ):
+                                    raise RuntimeError(
+                                        f"END mutation {end_mut_id} failed: {msg}"
+                                    )
+                                if msg.get("type") == "next" and msg.get("id") == sub_id:
+                                    data2 = (
+                                        msg.get("payload", {})
+                                        .get("data", {})
+                                        .get("listen")
+                                    )
+                                    if data2:
+                                        events.append(data2)
+                                        if data2.get("kind") == "transcript":
+                                            return events
+                                if (
+                                    msg.get("type") in ("complete", "error")
+                                    and msg.get("id") == sub_id
+                                ):
+                                    return events
                             audio_sent = True
                             end_sent = True
                             if not wait_for_transcript:

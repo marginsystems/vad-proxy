@@ -81,6 +81,12 @@ def _build_session_pipeline(
     """Build a pipeline whose output adapter feeds ``event_queue``."""
     base = build_pipeline(settings)
     old_output = base.c.output
+    if not isinstance(old_output, QueueOutputAdapter):
+        _log.warning(
+            "Configured output adapter %s will be bypassed for GraphQL sessions; "
+            "transcripts are delivered via the subscription stream instead.",
+            type(old_output).__name__,
+        )
     base.c.output = QueueOutputAdapter(event_queue)
     return base, old_output
 
@@ -185,6 +191,8 @@ class Session:
             if self._stopped:
                 return
             self._stopped = True
+        if self._consumer.done():
+            return
         await self._input_queue.put(_STOP)
         try:
             await self._consumer
