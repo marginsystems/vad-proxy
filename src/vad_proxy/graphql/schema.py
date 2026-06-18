@@ -64,7 +64,9 @@ class Mutation:
             raise ValueError("invalid base64 audio payload") from exc
         if not pcm:
             return True
-        return await session.append_audio(pcm)
+        if not await session.append_audio(pcm):
+            raise ValueError(f"session {session_id} has already stopped")
+        return True
 
     @strawberry.mutation
     async def end_utterance(
@@ -74,7 +76,9 @@ class Mutation:
         session = await manager.get(str(session_id))
         if session is None:
             raise ValueError(f"unknown session: {session_id}")
-        return await session.end_utterance()
+        if not await session.end_utterance():
+            raise ValueError(f"session {session_id} has already stopped")
+        return True
 
     @strawberry.mutation
     async def stop_session(

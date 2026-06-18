@@ -92,7 +92,7 @@ class Session:
     def __init__(self, session_id: str, settings: Settings) -> None:
         self.session_id = session_id
         self.settings = settings
-        self._input_queue: asyncio.Queue[bytes | _EndUtterance | _Stop] = asyncio.Queue()
+        self._input_queue: asyncio.Queue[bytes | _EndUtterance | _Stop] = asyncio.Queue(maxsize=128)
         self._event_queue: asyncio.Queue[VoiceEventData | object] = asyncio.Queue()
         self._pipeline = _build_session_pipeline(settings, self._event_queue)
         self._stopped = False
@@ -127,7 +127,7 @@ class Session:
                 except asyncio.QueueEmpty:
                     break
                 if item is _STOP:
-                    break
+                    continue
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
                         await self._pipeline.finish()
