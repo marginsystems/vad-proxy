@@ -12,6 +12,7 @@ just push PCM bytes into :meth:`feed` and call :meth:`finish` at the end.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 
 from vad_proxy.audio.segmenter import Segmenter, SegmenterParams, Utterance
@@ -25,6 +26,8 @@ from vad_proxy.personalization.base import Personalizer
 from vad_proxy.personalization.factory import build_personalizer
 from vad_proxy.stt.base import SttBackend
 from vad_proxy.stt.factory import build_stt
+
+_transcript_log = logging.getLogger("vad_proxy.transcript")
 
 
 @dataclass
@@ -109,6 +112,14 @@ class VadProxyPipeline:
             utterance.sample_rate,
             result.text,
             meta={"start_secs": utterance.start_secs, "end_secs": utterance.end_secs},
+        )
+
+        _transcript_log.info(
+            "[%.2f-%.2f] %s%s",
+            final.start_secs,
+            final.end_secs,
+            final.text,
+            "" if final.turn_complete else " [partial]",
         )
 
         await self.c.output.send(final)

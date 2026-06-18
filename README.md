@@ -64,6 +64,29 @@ Run the 24/7 WebSocket listener (clients stream raw 16 kHz mono PCM):
 vad-proxy serve
 ```
 
+## Run with Docker
+
+The recommended way to run the 24/7 listener in production:
+
+```bash
+cp .env.example .env          # optional: add API keys
+docker compose up --build -d
+```
+
+- **WebSocket:** `ws://localhost:8080/ws`
+- **Health:** `http://localhost:8080/health`
+- **Logs:** `logs/vad-proxy.log` on the host (bind-mounted from `/app/logs`)
+- **Data:** `data/` on the host (utterance logging, if enabled)
+
+Logs include operational events (server startup, connections) and every
+finalized transcript line. They are also mirrored to `docker logs vad-proxy`.
+
+Stop the container:
+
+```bash
+docker compose down
+```
+
 ## Testing
 
 ```bash

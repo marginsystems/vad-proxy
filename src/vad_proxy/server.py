@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from vad_proxy.config import Settings, load_settings
+from vad_proxy.logging_setup import configure_logging
 from vad_proxy.pipeline import build_pipeline
 
 
@@ -55,7 +56,13 @@ def main() -> None:
     import uvicorn
 
     settings = load_settings()
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
+    configure_logging(settings)
+    uvicorn.run(
+        create_app(settings),
+        host=settings.host,
+        port=settings.port,
+        log_config=None,
+    )
 
 
 if __name__ == "__main__":

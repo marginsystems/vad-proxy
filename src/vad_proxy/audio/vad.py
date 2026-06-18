@@ -26,19 +26,30 @@ os.environ.setdefault("OMP_DYNAMIC", "FALSE")
 
 import onnxruntime  # noqa: E402
 
+_MODEL_NAME = "silero_vad.onnx"
+
 
 def default_model_path() -> Path:
     """Resolve the Silero ONNX model path.
 
-    Checks ``VAD_PROXY_MODEL_PATH`` first, then the conventional ``models/``
-    directory at the repo root.
+    Resolution order:
+    1. ``VAD_PROXY_MODEL_PATH`` environment variable
+    2. ``models/silero_vad.onnx`` relative to the current working directory
+       (Docker WORKDIR ``/app``, local dev repo root)
+    3. ``models/silero_vad.onnx`` relative to the source tree (editable install)
     """
     env = os.environ.get("VAD_PROXY_MODEL_PATH")
     if env:
         return Path(env)
-    # repo_root/models/silero_vad.onnx  (this file is src/vad_proxy/audio/vad.py)
-    repo_root = Path(__file__).resolve().parents[3]
-    return repo_root / "models" / "silero_vad.onnx"
+
+    candidates = [
+        Path.cwd() / "models" / _MODEL_NAME,
+        Path(__file__).resolve().parents[3] / "models" / _MODEL_NAME,
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[0]
 
 
 class SileroVad:
