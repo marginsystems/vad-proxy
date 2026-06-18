@@ -50,17 +50,35 @@ export function ConnectionPanel({
       </label>
       <div className="health-banner">
         {healthError ? (
-          <span className="bad">Health: {healthError}</span>
+          <>
+            <span className="health-status-pill error">Error</span>
+            <span className="health-message" title={healthError}>
+              {healthError}
+            </span>
+            <span className="health-chip">session: {status}</span>
+          </>
         ) : health ? (
-          <span>
-            Server OK — STT: <strong>{health.stt_backend}</strong>, rate{" "}
-            {health.sample_rate} Hz, origins:{" "}
-            <strong>{health.allowed_origins.join(", ")}</strong>
-          </span>
+          <>
+            <span className="health-status-pill">OK</span>
+            <span className="health-chip">STT: {health.stt_backend}</span>
+            <span className="health-chip">{health.sample_rate} Hz</span>
+            <span
+              className="health-chip origins"
+              title={health.allowed_origins.join(", ")}
+            >
+              {health.allowed_origins.join(", ")}
+            </span>
+            <span className="health-chip">session: {status}</span>
+          </>
         ) : (
-          <span>Checking server…</span>
+          <>
+            <span className="health-status-pill skeleton">Checking</span>
+            <span className="health-chip skeleton">STT: ...</span>
+            <span className="health-chip skeleton">rate ...</span>
+            <span className="health-chip skeleton origins">origins ...</span>
+            <span className="health-chip skeleton">session: {status}</span>
+          </>
         )}
-        <span className="muted"> · session: {status}</span>
       </div>
     </section>
   );
