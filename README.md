@@ -66,8 +66,21 @@ vad-proxy serve
 
 **GraphQL voice API** (recommended for browser clients): token-authenticated
 `graphql-transport-ws` at `/graphql` — subscribe to `listen`, stream base64 PCM via
-`appendAudio`, receive `transcript` events. See [docs/INTEGRATION.md](docs/INTEGRATION.md)
-and the runnable demo at [examples/browser-voice/index.html](examples/browser-voice/index.html).
+`appendAudio`, receive `transcript` events. See [docs/INTEGRATION.md](docs/INTEGRATION.md).
+
+## Voice Lab (local UI)
+
+The recommended way to live-test mic → transcription on the same machine as Docker:
+
+```bash
+docker compose up -d --build
+cd frontend && npm install && npm run dev
+```
+
+Open **http://localhost:5173** — paste `VAD_PROXY_AUTH_TOKEN` from `.env` if set.
+See [frontend/README.md](frontend/README.md) for details.
+
+A zero-install HTML demo remains at [examples/browser-voice/index.html](examples/browser-voice/index.html).
 
 ## Run with Docker
 
