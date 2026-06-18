@@ -120,15 +120,17 @@ class Session:
                     async with self._pipeline_lock:
                         await self._pipeline.feed(item)
         except asyncio.CancelledError:
+            self._stopped = True
             await self._pipeline.aclose()
             await self._event_queue.put(_EVENT_STOP)
+            if not self._output_closed:
+                self._output_closed = True
+                await self._original_output.aclose()
         except Exception:
             _log.exception("session %s consumer failed", self.session_id)
             await self._event_queue.put(_EVENT_STOP)
 
     async def append_audio(self, pcm: bytes) -> None:
-        if self._stopped:
-            return
         await self._input_queue.put(pcm)
 
     async def end_utterance(self) -> None:
