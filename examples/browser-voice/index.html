@@ -143,8 +143,8 @@
         merged.set(c, off);
         off += c.length;
       }
-      pcmChunks.length = 0;
       if (stopping) return;
+      pcmChunks.length = 0;
       const b64 = int16ToBase64(merged);
       const { query, variables } = appendMutation(sessionId, b64);
       try {
