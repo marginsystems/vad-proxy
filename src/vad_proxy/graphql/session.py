@@ -121,6 +121,7 @@ class Session:
                         await self._pipeline.feed(item)
             # Drain any items that arrived after _STOP (TOCTOU race with
             # append_audio).
+            drain_finished = False
             while True:
                 try:
                     item = self._input_queue.get_nowait()
@@ -131,11 +132,13 @@ class Session:
                 if item is _END_UTTERANCE:
                     async with self._pipeline_lock:
                         await self._pipeline.finish()
+                    drain_finished = True
                 elif isinstance(item, bytes):
                     async with self._pipeline_lock:
                         await self._pipeline.feed(item)
-            async with self._pipeline_lock:
-                await self._pipeline.finish()
+            if not drain_finished:
+                async with self._pipeline_lock:
+                    await self._pipeline.finish()
             await self._event_queue.put(_EVENT_STOP)
             async with self._stop_lock:
                 if not self._pipeline_closed:
@@ -169,14 +172,14 @@ class Session:
         async with self._stop_lock:
             if self._stopped:
                 return False
-            await self._input_queue.put(pcm)
+        await self._input_queue.put(pcm)
         return True
 
     async def end_utterance(self) -> bool:
         async with self._stop_lock:
             if self._stopped:
                 return False
-            await self._input_queue.put(_END_UTTERANCE)
+        await self._input_queue.put(_END_UTTERANCE)
         return True
 
     async def iter_events(self) -> AsyncIterator[VoiceEventData]:
