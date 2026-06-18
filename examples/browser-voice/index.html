@@ -110,6 +110,17 @@
       return out;
     }
 
+    const PCM_WORKLET_CODE = `
+      class PcmCaptureProcessor extends AudioWorkletProcessor {
+        process(inputs) {
+          const channel = inputs[0]?.[0];
+          if (channel?.length) this.port.postMessage(channel.slice(0));
+          return true;
+        }
+      }
+      registerProcessor("pcm-capture-processor", PcmCaptureProcessor);
+    `;
+
     async function startMic() {
       mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
@@ -117,22 +128,27 @@
       });
       audioContext = new AudioContext();
       await audioContext.resume();
+      const workletUrl = URL.createObjectURL(
+        new Blob([PCM_WORKLET_CODE], { type: "application/javascript" }),
+      );
+      await audioContext.audioWorklet.addModule(workletUrl);
+      URL.revokeObjectURL(workletUrl);
+
       const source = audioContext.createMediaStreamSource(mediaStream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const worklet = new AudioWorkletNode(audioContext, "pcm-capture-processor");
       const inputRate = audioContext.sampleRate;
-      processor.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0);
-        const copy = new Float32Array(input.length);
-        copy.set(input);
-        const ds = downsample(copy, inputRate, 16000);
-        pcmChunks.push(floatToInt16(ds));
+      worklet.port.onmessage = (e) => {
+        if (stopping) return;
+        const samples = e.data;
+        if (!samples?.length) return;
+        pcmChunks.push(floatToInt16(downsample(samples, inputRate, 16000)));
       };
-      source.connect(processor);
       const silent = audioContext.createGain();
       silent.gain.value = 0;
-      processor.connect(silent);
+      source.connect(worklet);
+      worklet.connect(silent);
       silent.connect(audioContext.destination);
-      workletNode = processor;
+      workletNode = worklet;
       chunkTimer = setTimeout(scheduleFlush, 200);
     }
 
