@@ -186,11 +186,9 @@ class Session:
                 return
             self._stopped = True
         await self._input_queue.put(_STOP)
-        if self._consumer.cancelled():
-            return
         try:
             await self._consumer
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             _log.exception("session %s consumer failed", self.session_id)
         if not self._pipeline_closed:
             self._pipeline_closed = True
