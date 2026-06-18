@@ -25,9 +25,6 @@
   <label for="url">WebSocket URL</label>
   <input id="url" value="ws://127.0.0.1:8080/graphql" />
 
-  <label for="token">Auth token (connectionParams.token)</label>
-  <input id="token" type="password" placeholder="leave empty if server has no VAD_PROXY_AUTH_TOKEN" />
-
   <div class="row">
     <button id="start">Start listening</button>
     <button id="stop" disabled>Stop</button>
@@ -184,14 +181,12 @@
 
     $("start").onclick = async () => {
       const url = $("url").value.trim();
-      const token = $("token").value;
       $("start").disabled = true;
       sessionId = null;
       logEl.value = "";
 
       client = createClient({
         url,
-        connectionParams: token ? { token } : {},
       });
 
       disposeSub = client.subscribe(

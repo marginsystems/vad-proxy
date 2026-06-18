@@ -6,15 +6,15 @@ utterances are transcribed, refined, and proxied by the configured output
 adapter. A text message ``"flush"`` forces any in-progress utterance out.
 
 GraphQL-over-WebSocket (``graphql-transport-ws``) is also exposed at ``/graphql``
-for token-authenticated voice streaming with base64 PCM chunks and transcript
+for origin-restricted voice streaming with base64 PCM chunks and transcript
 subscriptions.
 """
 
 from __future__ import annotations
 
-import hmac
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 _log = logging.getLogger(__name__)
 
@@ -30,43 +30,58 @@ from vad_proxy.graphql.session import SessionManager
 from vad_proxy.logging_setup import configure_logging
 from vad_proxy.pipeline import build_pipeline
 
+_LOCALHOST_ORIGIN_PREFIXES = ("http://localhost", "http://127.0.0.1")
 
-def _parse_allowed_origins(value: str) -> list[str]:
+
+def _parse_configured_origins(value: str) -> list[str]:
     value = value.strip()
-    if not value or value == "*":
-        return ["*"]
+    if not value:
+        return []
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
-def _token_ok(settings: Settings, provided: str | None) -> bool:
-    expected = settings.auth_token
-    if not expected:
+def _is_localhost_origin(origin: str) -> bool:
+    host = urlparse(origin).hostname
+    return host is not None and host in ("localhost", "127.0.0.1")
+
+
+def _effective_origins(settings: Settings) -> list[str]:
+    """Origins permitted for CORS and GraphQL WS (localhost always included)."""
+    configured = _parse_configured_origins(settings.allowed_origins)
+    localhost = list(_LOCALHOST_ORIGIN_PREFIXES)
+    seen: set[str] = set()
+    result: list[str] = []
+    for origin in localhost + configured:
+        if origin not in seen:
+            seen.add(origin)
+            result.append(origin)
+    return result
+
+
+def _origin_ok(settings: Settings, origin: str | None) -> bool:
+    if origin is None:
         return True
-    if provided is None:
-        return False
-    if not isinstance(provided, str):
-        return False
-    return hmac.compare_digest(provided, expected)
+    if _is_localhost_origin(origin):
+        return True
+    return origin in _parse_configured_origins(settings.allowed_origins)
 
 
-class AuthGraphQLRouter(GraphQLRouter):
-    """GraphQL router that validates ``connectionParams.token`` on WS connect."""
+class OriginGraphQLRouter(GraphQLRouter):
+    """GraphQL router that validates the browser ``Origin`` header on WS connect."""
 
     def __init__(self, settings: Settings, *args: Any, **kwargs: Any) -> None:
         self._settings = settings
         super().__init__(*args, **kwargs)
 
     async def on_ws_connect(self, context: Context) -> Any:
-        params: dict[str, Any] | None = None
+        request = None
         if isinstance(context, dict):
-            params = context.get("connection_params")
-        elif hasattr(context, "connection_params"):
-            params = context.connection_params
-        token = None
-        if isinstance(params, dict):
-            token = params.get("token")
-        if not _token_ok(self._settings, token):
-            raise ConnectionRejectionError({"message": "invalid token"})
+            request = context.get("request")
+        elif hasattr(context, "request"):
+            request = context.request
+        origin = request.headers.get("origin") if request is not None else None
+        if not _origin_ok(self._settings, origin):
+            raise ConnectionRejectionError({"message": "origin not allowed"})
         return await super().on_ws_connect(context)
 
 
@@ -75,16 +90,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     session_manager = SessionManager(settings)
     app = FastAPI(title="vad-proxy", version="0.1.0")
 
-    origins = _parse_allowed_origins(settings.allowed_origins)
-    if not settings.auth_token:
-        _log.warning(
-            "VAD_PROXY_AUTH_TOKEN is empty — authentication disabled "
-            "(set a token to restrict access)"
-        )
+    origins = _effective_origins(settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=origins != ["*"],
+        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -92,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def graphql_context() -> dict[str, SessionManager]:
         return {"session_manager": session_manager}
 
-    graphql_router = AuthGraphQLRouter(
+    graphql_router = OriginGraphQLRouter(
         settings,
         schema,
         context_getter=graphql_context,
@@ -108,7 +119,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "stt_backend": settings.stt_backend,
             "llm_enabled": settings.llm_enabled,
             "output": settings.output,
-            "graphql_auth_required": bool(settings.auth_token),
+            "allowed_origins": _effective_origins(settings),
         }
 
     @app.websocket("/ws")

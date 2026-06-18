@@ -64,7 +64,7 @@ Run the 24/7 WebSocket listener (clients stream raw 16 kHz mono PCM):
 vad-proxy serve
 ```
 
-**GraphQL voice API** (recommended for browser clients): token-authenticated
+**GraphQL voice API** (recommended for browser clients): origin-restricted
 `graphql-transport-ws` at `/graphql` — subscribe to `listen`, stream base64 PCM via
 `appendAudio`, receive `transcript` events. See [docs/INTEGRATION.md](docs/INTEGRATION.md).
 
@@ -77,7 +77,7 @@ docker compose up -d --build
 cd frontend && npm install && npm run dev
 ```
 
-Open **http://localhost:5173** — paste `VAD_PROXY_AUTH_TOKEN` from `.env` if set.
+Open **http://localhost:5173** — no auth setup needed for local testing.
 See [frontend/README.md](frontend/README.md) for details.
 
 A zero-install HTML demo remains at [examples/browser-voice/index.html](examples/browser-voice/index.html).
@@ -92,7 +92,7 @@ docker compose up --build -d
 ```
 
 - **WebSocket (legacy):** `ws://localhost:8080/ws`
-- **GraphQL WebSocket:** `ws://localhost:8080/graphql` (`connectionParams.token` when `VAD_PROXY_AUTH_TOKEN` is set)
+- **GraphQL WebSocket:** `ws://localhost:8080/graphql` (localhost origins always allowed)
 - **Health:** `http://localhost:8080/health`
 - **Logs:** `logs/vad-proxy.log` on the host (bind-mounted from `/app/logs`)
 - **Data:** `data/` on the host (utterance logging, if enabled)

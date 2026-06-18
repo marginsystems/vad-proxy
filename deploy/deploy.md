@@ -13,7 +13,8 @@ WebSocket upgrades for `/graphql` and `/health`.
 
 - DNS `voice.biosystems.dev` → server public IP (grey-cloud / DNS-only for
   HTTP-01).
-- `.env` on the server with API keys and `VAD_PROXY_AUTH_TOKEN`. Set it to a long random value; leaving it empty **disables authentication** (dev only).
+- `.env` on the server with API keys and `VAD_PROXY_ALLOWED_ORIGINS` (e.g.
+  `https://biosystems.dev` for the organism app origin).
 - Docker and docker compose.
 
 ## Quick start
@@ -73,10 +74,10 @@ No UDP ports are opened. Port 8080 stays closed (localhost only).
 curl -s https://voice.biosystems.dev/health | jq .
 ```
 
-GraphQL WebSocket (with token):
+GraphQL WebSocket:
 
 ```bash
-# Use examples/browser-voice/index.html or the integration test against wss://voice.biosystems.dev/graphql
+# Use frontend/ Voice Lab, examples/browser-voice/index.html, or the integration test
 ```
 
 ## Logs

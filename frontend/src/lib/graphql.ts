@@ -33,14 +33,12 @@ export class VoiceGraphqlSession {
 
   constructor(
     private readonly wsUrl: string,
-    private readonly token: string,
     private readonly callbacks: VoiceSessionCallbacks,
   ) {}
 
   start(): void {
     this.client = createClient({
       url: this.wsUrl,
-      connectionParams: this.token ? { token: this.token } : {},
       on: {
         connected: () => this.callbacks.onStatus("WebSocket connected"),
         closed: (event: unknown) => {
@@ -49,7 +47,7 @@ export class VoiceGraphqlSession {
               ? (event as { code?: number }).code
               : undefined;
           if (code === 4403) {
-            this.callbacks.onError("Authentication failed (4403 Forbidden)");
+            this.callbacks.onError("Origin not allowed by server (4403)");
           }
         },
       },

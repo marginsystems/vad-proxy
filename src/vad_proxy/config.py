@@ -67,11 +67,9 @@ class Settings(BaseSettings):
     # --- server --------------------------------------------------------
     host: str = "0.0.0.0"
     port: int = 8080
-    # Shared secret for GraphQL WebSocket clients (connectionParams.token).
-    # When empty, GraphQL connections are accepted without a token.
-    auth_token: str = ""
-    # Comma-separated CORS origins, or "*" for all.
-    allowed_origins: str = "*"
+    # Comma-separated browser app origins (full URLs with scheme).
+    # localhost / 127.0.0.1 are always permitted for local dev.
+    allowed_origins: str = ""
 
     # --- logging -------------------------------------------------------
     log_dir: str = "logs"

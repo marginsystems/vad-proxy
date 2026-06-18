@@ -14,22 +14,34 @@ transcripts.
 Protocol: **`graphql-transport-ws`** (the modern subprotocol used by the npm
 [`graphql-ws`](https://github.com/enisdenjo/graphql-ws) client).
 
-## Authentication
+## Access control
 
-When `VAD_PROXY_AUTH_TOKEN` is set on the server, clients must pass the same
-value during the WebSocket handshake:
+Browser clients are allowed when their `Origin` header matches an entry in
+`VAD_PROXY_ALLOWED_ORIGINS`, or when the page is served from **localhost** /
+**127.0.0.1** (any port — local Voice Lab works out of the box).
+
+Configure allowed origins in `.env`:
+
+```bash
+# Comma-separated full browser app URLs (scheme + host + port if non-default).
+VAD_PROXY_ALLOWED_ORIGINS=https://biosystems.dev
+```
+
+Non-browser clients (Python scripts, integration tests) may connect without an
+`Origin` header.
+
+If the origin is not allowed, the server closes the socket with code **4403
+Forbidden** before any subscription starts.
 
 ```js
 import { createClient } from "graphql-ws";
 
 const client = createClient({
   url: "wss://voice.biosystems.dev/graphql",
-  connectionParams: { token: YOUR_TOKEN },
 });
 ```
 
-If the token is missing or wrong, the server closes the socket with code **4403
-Forbidden** before any subscription starts.
+No `connectionParams` or shared secret is required.
 
 ## GraphQL schema
 
@@ -72,7 +84,7 @@ type Subscription {
 sequenceDiagram
   participant Client
   participant Server
-  Client->>Server: connection_init { token }
+  Client->>Server: connection_init
   Server-->>Client: connection_ack
   Client->>Server: subscribe listen
   Server-->>Client: VoiceEvent(session_started, sessionId)
@@ -83,7 +95,7 @@ sequenceDiagram
   Client->>Server: mutation stopSession(sessionId)
 ```
 
-1. Open the WebSocket with `connectionParams.token`.
+1. Open the WebSocket (browser sends `Origin` automatically).
 2. Subscribe to `listen`.
 3. Read `sessionId` from the `session_started` event.
 4. Capture mic audio, resample to 16 kHz mono Int16, base64-encode, call
@@ -161,8 +173,6 @@ The organism front-end currently uses REST + SSE for voice
    the flow above.
 3. Map `VoiceEvent` transcripts into the existing chat message state in
    `useVoiceChat.ts`.
-4. Store the shared auth token in the same secrets mechanism used for other API
-   keys (never commit it).
 
 This repository ships the server, protocol contract, and browser demo only;
 organism edits are intentionally out of scope for the initial GraphQL rollout.
@@ -173,5 +183,4 @@ organism edits are intentionally out of scope for the initial GraphQL rollout.
 curl https://voice.biosystems.dev/health
 ```
 
-Returns JSON including `sample_rate`, `stt_backend`, and
-`graphql_auth_required`.
+Returns JSON including `sample_rate`, `stt_backend`, and `allowed_origins`.
