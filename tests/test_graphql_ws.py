@@ -228,8 +228,6 @@ async def _graphql_ws_round_trip(
                                     )
                                     if data2:
                                         events.append(data2)
-                                        if data2.get("kind") == "transcript":
-                                            break
                                 if (
                                     msg.get("type") in ("complete", "error")
                                     and msg.get("id") == sub_id

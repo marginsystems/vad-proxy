@@ -172,7 +172,10 @@ class Session:
         async with self._stop_lock:
             if self._stopped:
                 return False
-        await self._input_queue.put(pcm)
+        try:
+            self._input_queue.put_nowait(pcm)
+        except asyncio.QueueFull:
+            return False
         return True
 
     async def end_utterance(self) -> bool:

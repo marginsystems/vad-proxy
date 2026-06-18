@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import AsyncGenerator
 
 import strawberry
@@ -107,7 +108,7 @@ class Subscription:
                 yield _to_voice_event(event)
         finally:
             if session is not None:
-                await manager.stop_session(session.session_id)
+                await asyncio.shield(manager.stop_session(session.session_id))
 
 
 schema = strawberry.Schema(
