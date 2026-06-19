@@ -115,6 +115,12 @@ class Segmenter:
             self._interim_chunk_bytes = 0
         self._interim_cursor = 0
         self._pending_interim: deque[InterimSlice] = deque()
+        self._utterance_epoch = 0
+
+    @property
+    def utterance_epoch(self) -> int:
+        """Increments each time a new in-progress utterance begins."""
+        return self._utterance_epoch
 
     def _is_speech(self, chunk_pcm16: bytes) -> bool:
         confidence = self.vad.confidence(chunk_pcm16)
@@ -167,6 +173,7 @@ class Segmenter:
         return result
 
     def _begin_utterance(self) -> None:
+        self._utterance_epoch += 1
         self._state = VadState.SPEAKING
         # Seed with pre-roll so the leading audio is not clipped.
         self._utterance = list(self._preroll)
@@ -174,6 +181,7 @@ class Segmenter:
         self._preroll.clear()
         self._starting_count = 0
         self._interim_cursor = 0
+        self._pending_interim.clear()
 
     def _utterance_byte_len(self) -> int:
         return sum(len(chunk) for chunk in self._utterance)

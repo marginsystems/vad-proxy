@@ -66,6 +66,7 @@ export function useVoiceSession(wsUrl: string) {
         setEvents((prev) => [...prev, ev]);
       },
       onError: (msg) => {
+        setLiveInterim("");
         setError(msg);
         setStatus("error");
       },
@@ -84,6 +85,7 @@ export function useVoiceSession(wsUrl: string) {
       setStatus("listening");
       pushLog("status", "Microphone started");
     } catch (e) {
+      setLiveInterim("");
       setError(`Mic access failed: ${e instanceof Error ? e.message : String(e)}`);
       setStatus("error");
       await session.stop();
@@ -100,6 +102,7 @@ export function useVoiceSession(wsUrl: string) {
     micRef.current = null;
     await sessionRef.current?.stop();
     sessionRef.current = null;
+    setLiveInterim("");
     setStatus("idle");
     pushLog("status", "Session stopped");
   }, [pushLog]);

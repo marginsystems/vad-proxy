@@ -74,6 +74,16 @@ class VadProxyPipeline:
         self._residual = b""
         self._turn_texts: list[str] = []
         self._turn_stt_backend = ""
+        self._turn_stt_confidence: float | None = None
+        self._turn_epoch = 0
+
+    def _reset_turn_if_new_utterance(self) -> None:
+        epoch = self._segmenter.utterance_epoch
+        if epoch != self._turn_epoch:
+            self._turn_texts.clear()
+            self._turn_stt_backend = ""
+            self._turn_stt_confidence = None
+            self._turn_epoch = epoch
 
     async def feed(self, pcm: bytes) -> None:
         """Push arbitrary-length PCM; processes any complete VAD chunks."""
@@ -97,6 +107,7 @@ class VadProxyPipeline:
             await self._handle_utterance(tail)
 
     async def _drain_and_emit_interims(self) -> None:
+        self._reset_turn_if_new_utterance()
         while True:
             interim_slice = self._segmenter.drain_interim()
             if interim_slice is None:
@@ -108,7 +119,9 @@ class VadProxyPipeline:
             if not text:
                 continue
             self._turn_texts.append(text)
-            self._turn_stt_backend = transcript.backend
+            if not self._turn_stt_backend:
+                self._turn_stt_backend = transcript.backend
+            self._turn_stt_confidence = transcript.confidence
             joined = " ".join(self._turn_texts)
             await self.c.output.send_interim(
                 joined,
@@ -119,11 +132,15 @@ class VadProxyPipeline:
 
     async def _handle_utterance(self, utterance: Utterance) -> None:
         if self.settings.interim_enabled:
+            self._reset_turn_if_new_utterance()
             await self._drain_and_emit_interims()
             raw_text = " ".join(self._turn_texts)
-            stt_backend = self._turn_stt_backend
+            stt_backend = self._turn_stt_backend or self.c.stt.name
+            turn_confidence = self._turn_stt_confidence
             self._turn_texts.clear()
             self._turn_stt_backend = ""
+            self._turn_stt_confidence = None
+            self._turn_epoch = self._segmenter.utterance_epoch
             raw_text = self.c.personalizer.bias_vocabulary(raw_text)
             if not raw_text.strip():
                 return
@@ -150,6 +167,8 @@ class VadProxyPipeline:
         )
         if not self.settings.interim_enabled:
             final.meta["stt_confidence"] = transcript.confidence
+        elif turn_confidence is not None:
+            final.meta["stt_confidence"] = turn_confidence
 
         # Personalization dataset logging (best-effort, never blocks output).
         await self.c.personalizer.record_sample(
