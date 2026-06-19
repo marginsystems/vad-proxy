@@ -2,14 +2,18 @@ import type { VoiceEvent } from "../lib/types";
 
 type Props = {
   latest: VoiceEvent | null;
+  liveInterim: string;
   transcripts: VoiceEvent[];
 };
 
-export function TranscriptPanel({ latest, transcripts }: Props) {
+export function TranscriptPanel({ latest, liveInterim, transcripts }: Props) {
   return (
     <section className="panel">
       <h2>Transcripts</h2>
       <div className="latest-transcript">
+        {liveInterim ? (
+          <p className="interim">{liveInterim}</p>
+        ) : null}
         {latest?.text ? (
           <>
             <p className="quote">{latest.text}</p>
@@ -18,9 +22,9 @@ export function TranscriptPanel({ latest, transcripts }: Props) {
               {String(latest.endPhrase)} · {latest.sttBackend}
             </p>
           </>
-        ) : (
+        ) : !liveInterim ? (
           <p className="muted">Speak into the mic after starting a session.</p>
-        )}
+        ) : null}
       </div>
       {transcripts.length > 0 && (
         <ul className="transcript-list">

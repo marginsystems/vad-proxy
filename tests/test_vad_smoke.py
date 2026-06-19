@@ -11,7 +11,7 @@ pure silence never produces a (false) utterance.
 from __future__ import annotations
 
 from vad_proxy.audio.decode import decode_to_pcm16, pcm_duration_secs
-from vad_proxy.audio.segmenter import SegmenterParams, segment_pcm
+from vad_proxy.audio.segmenter import Segmenter, SegmenterParams, segment_pcm
 from vad_proxy.audio.vad import SileroVad
 
 
@@ -28,3 +28,28 @@ def test_silence_produces_no_utterance(model_available):
     vad = SileroVad(sample_rate=16000)
     utterances = segment_pcm(silence, vad, SegmenterParams())
     assert utterances == []
+
+
+def test_interim_drain_disabled_by_default(model_available):
+    vad = SileroVad(sample_rate=16000)
+    seg = Segmenter(vad, SegmenterParams())
+    assert seg.drain_interim() is None
+
+
+def test_interim_slices_accumulate(model_available, test_audio_path):
+    from vad_proxy.audio.decode import decode_to_pcm16
+    from vad_proxy.audio.segmenter import Segmenter, iter_chunks
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    vad = SileroVad(sample_rate=16000)
+    seg = Segmenter(vad, SegmenterParams(interim_chunk_secs=0.5))
+    interim_count = 0
+    for chunk in iter_chunks(pcm, vad.chunk_size):
+        seg.process_chunk(chunk)
+        while seg.drain_interim() is not None:
+            interim_count += 1
+    tail = seg.flush()
+    while seg.drain_interim() is not None:
+        interim_count += 1
+    if tail is not None:
+        assert interim_count >= 1

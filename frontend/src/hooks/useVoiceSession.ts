@@ -15,6 +15,7 @@ export function useVoiceSession(wsUrl: string) {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [events, setEvents] = useState<VoiceEvent[]>([]);
+  const [liveInterim, setLiveInterim] = useState("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   const logIdRef = useRef(0);
@@ -49,14 +50,23 @@ export function useVoiceSession(wsUrl: string) {
     setError(null);
     setStatus("connecting");
     setEvents([]);
+    setLiveInterim("");
     setLogs([]);
 
     const session = new VoiceGraphqlSession(wsUrl, {
       onEvent: (ev) => {
         pushLog(ev.kind, ev);
+        if (ev.kind === "transcript" && ev.interim) {
+          setLiveInterim(ev.text ?? "");
+          return;
+        }
+        if (ev.kind === "transcript") {
+          setLiveInterim("");
+        }
         setEvents((prev) => [...prev, ev]);
       },
       onError: (msg) => {
+        setLiveInterim("");
         setError(msg);
         setStatus("error");
       },
@@ -67,6 +77,7 @@ export function useVoiceSession(wsUrl: string) {
     session.start();
 
     try {
+      await session.waitForSession();
       const mic = await startMicCapture((pcm) => {
         void session.appendAudio(pcm);
       });
@@ -74,6 +85,7 @@ export function useVoiceSession(wsUrl: string) {
       setStatus("listening");
       pushLog("status", "Microphone started");
     } catch (e) {
+      setLiveInterim("");
       setError(`Mic access failed: ${e instanceof Error ? e.message : String(e)}`);
       setStatus("error");
       await session.stop();
@@ -90,6 +102,7 @@ export function useVoiceSession(wsUrl: string) {
     micRef.current = null;
     await sessionRef.current?.stop();
     sessionRef.current = null;
+    setLiveInterim("");
     setStatus("idle");
     pushLog("status", "Session stopped");
   }, [pushLog]);
@@ -112,6 +125,7 @@ export function useVoiceSession(wsUrl: string) {
     events,
     transcripts,
     latest,
+    liveInterim,
     logs,
     refreshHealth,
     start,

@@ -40,6 +40,9 @@ class SegmenterParams:
     min_volume: float = 0.0
     pre_speech_secs: float = 0.3
     max_utterance_secs: float = 30.0
+    # Sub-chunk cadence for interim STT while an utterance is in progress.
+    # 0 disables interim slicing.
+    interim_chunk_secs: float = 0.0
 
 
 @dataclass
@@ -54,6 +57,15 @@ class Utterance:
     @property
     def duration_secs(self) -> float:
         return self.end_secs - self.start_secs
+
+
+@dataclass
+class InterimSlice:
+    """A pending sub-chunk of the in-progress utterance for interim STT."""
+
+    pcm: bytes
+    start_secs: float
+    end_secs: float
 
 
 def _rms_volume(chunk_float32: np.ndarray) -> float:
@@ -94,6 +106,22 @@ class Segmenter:
         self._utterance: list[bytes] = []
         self._utterance_start_chunk = 0
 
+        if self.params.interim_chunk_secs > 0:
+            interim_chunks = max(
+                1, round(self.params.interim_chunk_secs / self._secs_per_chunk)
+            )
+            self._interim_chunk_bytes = interim_chunks * self.chunk_size * 2
+        else:
+            self._interim_chunk_bytes = 0
+        self._interim_cursor = 0
+        self._pending_interim: deque[InterimSlice] = deque()
+        self._utterance_epoch = 0
+
+    @property
+    def utterance_epoch(self) -> int:
+        """Increments each time a new in-progress utterance begins."""
+        return self._utterance_epoch
+
     def _is_speech(self, chunk_pcm16: bytes) -> bool:
         confidence = self.vad.confidence(chunk_pcm16)
         audio_float32 = np.frombuffer(chunk_pcm16, dtype=np.int16).astype(np.float32) / 32768.0
@@ -123,6 +151,7 @@ class Segmenter:
 
         elif self._state == VadState.SPEAKING:
             self._utterance.append(chunk_pcm16)
+            self._maybe_stash_interim_slices()
             if not speaking:
                 self._state = VadState.STOPPING
                 self._stopping_count = 1
@@ -131,6 +160,7 @@ class Segmenter:
 
         elif self._state == VadState.STOPPING:
             self._utterance.append(chunk_pcm16)
+            self._maybe_stash_interim_slices()
             if speaking:
                 self._state = VadState.SPEAKING
                 self._stopping_count = 0
@@ -143,14 +173,78 @@ class Segmenter:
         return result
 
     def _begin_utterance(self) -> None:
+        self._utterance_epoch += 1
         self._state = VadState.SPEAKING
         # Seed with pre-roll so the leading audio is not clipped.
         self._utterance = list(self._preroll)
         self._utterance_start_chunk = self._chunk_index - len(self._preroll) + 1
         self._preroll.clear()
         self._starting_count = 0
+        self._interim_cursor = 0
+        self._pending_interim.clear()
+
+    def _utterance_byte_len(self) -> int:
+        return sum(len(chunk) for chunk in self._utterance)
+
+    def _slice_times(self, start_byte: int, end_byte: int) -> tuple[float, float]:
+        bytes_per_sec = self.sample_rate * 2
+        utterance_start_secs = max(0.0, self._utterance_start_chunk * self._secs_per_chunk)
+        start = utterance_start_secs + start_byte / bytes_per_sec
+        end = utterance_start_secs + end_byte / bytes_per_sec
+        return start, end
+
+    def _extract_range(self, start_byte: int, end_byte: int) -> bytes:
+        parts: list[bytes] = []
+        pos = 0
+        for chunk in self._utterance:
+            chunk_len = len(chunk)
+            chunk_end = pos + chunk_len
+            if chunk_end <= start_byte:
+                pos = chunk_end
+                continue
+            if pos >= end_byte:
+                break
+            local_start = max(0, start_byte - pos)
+            local_end = min(chunk_len, end_byte - pos)
+            parts.append(chunk[local_start:local_end])
+            pos = chunk_end
+        return b"".join(parts)
+
+    def _stash_slice(self, start_byte: int, end_byte: int) -> None:
+        start_secs, end_secs = self._slice_times(start_byte, end_byte)
+        self._pending_interim.append(
+            InterimSlice(
+                pcm=self._extract_range(start_byte, end_byte),
+                start_secs=start_secs,
+                end_secs=end_secs,
+            )
+        )
+
+    def _maybe_stash_interim_slices(self) -> None:
+        if self._interim_chunk_bytes <= 0:
+            return
+        total = self._utterance_byte_len()
+        while total - self._interim_cursor >= self._interim_chunk_bytes:
+            end_byte = self._interim_cursor + self._interim_chunk_bytes
+            self._stash_slice(self._interim_cursor, end_byte)
+            self._interim_cursor = end_byte
+
+    def _stash_interim_tail(self) -> None:
+        if self._interim_chunk_bytes <= 0:
+            return
+        total = self._utterance_byte_len()
+        if total > self._interim_cursor:
+            self._stash_slice(self._interim_cursor, total)
+            self._interim_cursor = total
+
+    def drain_interim(self) -> InterimSlice | None:
+        """Return the next pending interim slice, if any."""
+        if not self._pending_interim:
+            return None
+        return self._pending_interim.popleft()
 
     def _end_utterance(self) -> Utterance:
+        self._stash_interim_tail()
         pcm = b"".join(self._utterance)
         start = max(0.0, self._utterance_start_chunk * self._secs_per_chunk)
         end = (self._chunk_index + 1) * self._secs_per_chunk
@@ -159,6 +253,7 @@ class Segmenter:
         )
         self._state = VadState.QUIET
         self._utterance = []
+        self._interim_cursor = 0
         self._stopping_count = 0
         self._preroll.clear()
         return utterance
@@ -176,6 +271,8 @@ class Segmenter:
         self._starting_count = 0
         self._stopping_count = 0
         self._utterance = []
+        self._interim_cursor = 0
+        self._pending_interim.clear()
         self._preroll.clear()
 
 

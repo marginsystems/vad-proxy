@@ -1,5 +1,7 @@
 /** Browser mic capture helpers: downsample to 16 kHz mono Int16 PCM. */
 
+const WORKLET_URL = "/pcm-capture-processor.js";
+
 export function floatToInt16(float32: Float32Array): Int16Array {
   const out = new Int16Array(float32.length);
   for (let i = 0; i < float32.length; i++) {
@@ -53,22 +55,28 @@ export async function startMicCapture(
 
   const audioContext = new AudioContext();
   await audioContext.resume();
+  await audioContext.audioWorklet.addModule(WORKLET_URL);
+
   const source = audioContext.createMediaStreamSource(stream);
-  const processor = audioContext.createScriptProcessor(4096, 1, 1);
+  const worklet = new AudioWorkletNode(audioContext, "pcm-capture-processor");
   const inputRate = audioContext.sampleRate;
   const pcmChunks: Int16Array[] = [];
   let stopping = false;
   let chunkTimer: ReturnType<typeof setTimeout> | null = null;
 
-  processor.onaudioprocess = (e) => {
+  worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
     if (stopping) return;
-    const input = e.inputBuffer.getChannelData(0);
-    const copy = new Float32Array(input.length);
-    copy.set(input);
-    pcmChunks.push(floatToInt16(downsample(copy, inputRate, 16000)));
+    const samples = event.data;
+    if (!samples?.length) return;
+    pcmChunks.push(floatToInt16(downsample(samples, inputRate, 16000)));
   };
 
-  source.connect(processor);
+  // Keep the worklet in the render graph (required for processing).
+  const silent = audioContext.createGain();
+  silent.gain.value = 0;
+  source.connect(worklet);
+  worklet.connect(silent);
+  silent.connect(audioContext.destination);
 
   const flush = () => {
     if (stopping || pcmChunks.length === 0) return;
@@ -96,8 +104,10 @@ export async function startMicCapture(
       if (chunkTimer !== null) clearTimeout(chunkTimer);
       flush();
       stopping = true;
-      processor.disconnect();
+      worklet.port.onmessage = null;
+      worklet.disconnect();
       source.disconnect();
+      silent.disconnect();
       stream.getTracks().forEach((t) => t.stop());
       await audioContext.close();
     },

@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # --- server --------------------------------------------------------
     host: str = "0.0.0.0"
     port: int = 8080
+    # Live interim transcripts: sub-chunk the in-progress utterance through STT
+    # while speaking (no LLM). Off by default; existing path unchanged.
+    interim_enabled: bool = False
+    interim_secs: float = 2.0
     # Comma-separated browser app origins (full URLs with scheme).
     # localhost / 127.0.0.1 are always permitted for local dev.
     allowed_origins: str = ""

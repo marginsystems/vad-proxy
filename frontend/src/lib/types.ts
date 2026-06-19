@@ -9,6 +9,7 @@ export type VoiceEvent = {
   startSecs?: number | null;
   endSecs?: number | null;
   sttBackend?: string | null;
+  interim?: boolean | null;
 };
 
 export type HealthResponse = {

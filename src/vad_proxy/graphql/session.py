@@ -40,6 +40,7 @@ class VoiceEventData:
     start_secs: float | None = None
     end_secs: float | None = None
     stt_backend: str | None = None
+    interim: bool = False
 
 
 class QueueOutputAdapter(OutputAdapter):
@@ -60,6 +61,20 @@ class QueueOutputAdapter(OutputAdapter):
                 start_secs=final.start_secs,
                 end_secs=final.end_secs,
                 stt_backend=final.stt_backend,
+            )
+        )
+
+    async def send_interim(
+        self, text: str, start_secs: float, end_secs: float, stt_backend: str
+    ) -> None:
+        await self._queue.put(
+            VoiceEventData(
+                kind="transcript",
+                interim=True,
+                text=text,
+                start_secs=start_secs,
+                end_secs=end_secs,
+                stt_backend=stt_backend,
             )
         )
 
