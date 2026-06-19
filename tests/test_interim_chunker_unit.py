@@ -69,6 +69,8 @@ def test_dip_cut_after_sustained_quiet():
         start = total
         total += chunk_bytes
         end = chunker.on_chunk(0.02, start, total, cursor)
+        if end is not None:
+            break
 
     assert end == dip_start
     assert chunker.last_reason == "dip"
