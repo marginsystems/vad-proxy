@@ -42,7 +42,7 @@ def test_interim_slices_accumulate(model_available, test_audio_path):
 
     pcm = decode_to_pcm16(test_audio_path, 16000)
     vad = SileroVad(sample_rate=16000)
-    seg = Segmenter(vad, SegmenterParams(interim_chunk_secs=0.5))
+    seg = Segmenter(vad, SegmenterParams(interim_chunk_secs=0.5, interim_smart=False))
     interim_count = 0
     for chunk in iter_chunks(pcm, vad.chunk_size):
         seg.process_chunk(chunk)

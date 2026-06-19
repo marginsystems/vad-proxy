@@ -83,6 +83,12 @@ type Subscription {
   speaking. These carry **raw STT text** (joined chunk transcripts so far) and
   are **not** LLM-polished. The final `transcript` for the turn has
   `interim: false` (default) and replaces the live line in the UI.
+- **Smart chunking** (default when interim is on): slices are cut on brief RMS
+  dips between words after a minimum buffer (`VAD_PROXY_INTERIM_MIN_SECS`, default
+  `0.5`), capped at `VAD_PROXY_INTERIM_SECS` (max slice). Tunables:
+  `VAD_PROXY_INTERIM_DIP_RATIO`, `VAD_PROXY_INTERIM_DIP_HOLD_SECS`,
+  `VAD_PROXY_INTERIM_SMART=false` restores fixed-width chunks. Preview boundaries
+  with `python scripts/preview_interim_chunks.py tests/data/chunking-speech-test.mp3`.
 
 ## Client flow
 

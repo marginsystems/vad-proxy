@@ -68,6 +68,10 @@ class VadProxyPipeline:
             interim_chunk_secs=(
                 settings.interim_secs if settings.interim_enabled else 0.0
             ),
+            interim_min_secs=settings.interim_min_secs,
+            interim_smart=settings.interim_smart if settings.interim_enabled else False,
+            interim_dip_ratio=settings.interim_dip_ratio,
+            interim_dip_hold_secs=settings.interim_dip_hold_secs,
         )
         self._segmenter = Segmenter(components.vad, params)
         self._chunk_bytes = components.vad.chunk_size * 2
