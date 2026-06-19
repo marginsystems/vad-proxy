@@ -46,7 +46,7 @@ def main() -> int:
     parser.add_argument("--min-secs", type=float, default=0.5)
     parser.add_argument("--max-secs", type=float, default=2.0)
     parser.add_argument("--dip-ratio", type=float, default=0.35)
-    parser.add_argument("--dip-hold-secs", type=float, default=0.06)
+    parser.add_argument("--dip-hold-secs", type=float, default=0.04)
     parser.add_argument(
         "--fixed",
         action="store_true",

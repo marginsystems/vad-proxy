@@ -19,7 +19,7 @@ def _smart_params(**overrides) -> SegmenterParams:
         "interim_min_secs": 0.5,
         "interim_smart": True,
         "interim_dip_ratio": 0.35,
-        "interim_dip_hold_secs": 0.06,
+        "interim_dip_hold_secs": 0.04,
     }
     defaults.update(overrides)
     return SegmenterParams(**defaults)
@@ -38,6 +38,22 @@ def test_smart_chunks_respect_min_max_bounds(model_available, chunking_speech_te
         if not is_tail:
             assert duration >= 0.5 - CHUNK_TOLERANCE_SECS
         assert duration <= 2.0 + CHUNK_TOLERANCE_SECS
+
+
+def test_smart_chunks_cut_on_dips_not_only_max(model_available, chunking_speech_test_path):
+    """Default dip_hold should produce word-boundary cuts, not only max-cap slices."""
+    pcm = decode_to_pcm16(chunking_speech_test_path, 16000)
+    vad = SileroVad(sample_rate=16000)
+    params = _smart_params(interim_chunk_secs=1.0)
+    slices = collect_interim_slices(pcm, vad, params)
+    if len(slices) < 2:
+        pytest.skip("VAD did not detect enough speech for interim slicing on this host")
+
+    dip_slices = [s for s in slices if s.reason == "dip"]
+    assert len(dip_slices) >= 2, (
+        "expected multiple dip cuts; try lowering VAD_PROXY_INTERIM_DIP_HOLD_SECS "
+        "or record a sample with natural pauses"
+    )
 
 
 def test_smart_chunks_cover_utterance(model_available, chunking_speech_test_path):

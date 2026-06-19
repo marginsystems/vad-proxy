@@ -14,7 +14,7 @@ class InterimChunkParams:
     min_secs: float = 0.5
     max_secs: float = 2.0
     dip_ratio: float = 0.35
-    dip_hold_secs: float = 0.06
+    dip_hold_secs: float = 0.04
     peak_window_secs: float = 0.25
     sample_rate: int = 16000
     chunk_size: int = 512
