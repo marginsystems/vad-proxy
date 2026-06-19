@@ -14,12 +14,13 @@ Design references:
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Iterator
 
 import numpy as np
 
+from vad_proxy.audio.interim_chunker import InterimChunkParams, InterimChunker
 from vad_proxy.audio.vad import SileroVad
 
 
@@ -41,8 +42,12 @@ class SegmenterParams:
     pre_speech_secs: float = 0.3
     max_utterance_secs: float = 30.0
     # Sub-chunk cadence for interim STT while an utterance is in progress.
-    # 0 disables interim slicing.
+    # When > 0, interim slicing is enabled. In smart mode this is the max cap.
     interim_chunk_secs: float = 0.0
+    interim_min_secs: float = 0.5
+    interim_smart: bool = True
+    interim_dip_ratio: float = 0.35
+    interim_dip_hold_secs: float = 0.06
 
 
 @dataclass
@@ -66,6 +71,7 @@ class InterimSlice:
     pcm: bytes
     start_secs: float
     end_secs: float
+    reason: str | None = None
 
 
 def _rms_volume(chunk_float32: np.ndarray) -> float:
@@ -106,16 +112,30 @@ class Segmenter:
         self._utterance: list[bytes] = []
         self._utterance_start_chunk = 0
 
-        if self.params.interim_chunk_secs > 0:
-            interim_chunks = max(
-                1, round(self.params.interim_chunk_secs / self._secs_per_chunk)
-            )
-            self._interim_chunk_bytes = interim_chunks * self.chunk_size * 2
-        else:
-            self._interim_chunk_bytes = 0
+        self._interim_enabled = self.params.interim_chunk_secs > 0
         self._interim_cursor = 0
         self._pending_interim: deque[InterimSlice] = deque()
         self._utterance_epoch = 0
+        self._interim_chunker: InterimChunker | None = None
+        self._interim_chunk_bytes = 0
+
+        if self._interim_enabled:
+            if self.params.interim_smart:
+                self._interim_chunker = InterimChunker(
+                    InterimChunkParams(
+                        min_secs=self.params.interim_min_secs,
+                        max_secs=self.params.interim_chunk_secs,
+                        dip_ratio=self.params.interim_dip_ratio,
+                        dip_hold_secs=self.params.interim_dip_hold_secs,
+                        sample_rate=self.sample_rate,
+                        chunk_size=self.chunk_size,
+                    )
+                )
+            else:
+                interim_chunks = max(
+                    1, round(self.params.interim_chunk_secs / self._secs_per_chunk)
+                )
+                self._interim_chunk_bytes = interim_chunks * self.chunk_size * 2
 
     @property
     def utterance_epoch(self) -> int:
@@ -151,7 +171,7 @@ class Segmenter:
 
         elif self._state == VadState.SPEAKING:
             self._utterance.append(chunk_pcm16)
-            self._maybe_stash_interim_slices()
+            self._maybe_stash_interim_slices(chunk_pcm16)
             if not speaking:
                 self._state = VadState.STOPPING
                 self._stopping_count = 1
@@ -160,7 +180,7 @@ class Segmenter:
 
         elif self._state == VadState.STOPPING:
             self._utterance.append(chunk_pcm16)
-            self._maybe_stash_interim_slices()
+            self._maybe_stash_interim_slices(chunk_pcm16)
             if speaking:
                 self._state = VadState.SPEAKING
                 self._stopping_count = 0
@@ -182,6 +202,8 @@ class Segmenter:
         self._starting_count = 0
         self._interim_cursor = 0
         self._pending_interim.clear()
+        if self._interim_chunker is not None:
+            self._interim_chunker.reset()
 
     def _utterance_byte_len(self) -> int:
         return sum(len(chunk) for chunk in self._utterance)
@@ -210,31 +232,53 @@ class Segmenter:
             pos = chunk_end
         return b"".join(parts)
 
-    def _stash_slice(self, start_byte: int, end_byte: int) -> None:
+    def _stash_slice(self, start_byte: int, end_byte: int, reason: str | None = None) -> None:
         start_secs, end_secs = self._slice_times(start_byte, end_byte)
         self._pending_interim.append(
             InterimSlice(
                 pcm=self._extract_range(start_byte, end_byte),
                 start_secs=start_secs,
                 end_secs=end_secs,
+                reason=reason,
             )
         )
 
-    def _maybe_stash_interim_slices(self) -> None:
-        if self._interim_chunk_bytes <= 0:
+    def _maybe_stash_interim_slices(self, chunk_pcm16: bytes) -> None:
+        if not self._interim_enabled:
             return
         total = self._utterance_byte_len()
+        if self._interim_chunker is not None:
+            audio_float32 = (
+                np.frombuffer(chunk_pcm16, dtype=np.int16).astype(np.float32) / 32768.0
+            )
+            rms = _rms_volume(audio_float32)
+            chunk_bytes = len(chunk_pcm16)
+            end_byte = self._interim_chunker.on_chunk(
+                rms,
+                total - chunk_bytes,
+                total,
+                self._interim_cursor,
+            )
+            if end_byte is not None and end_byte > self._interim_cursor:
+                self._stash_slice(
+                    self._interim_cursor,
+                    end_byte,
+                    reason=self._interim_chunker.last_reason,
+                )
+                self._interim_cursor = end_byte
+            return
+
         while total - self._interim_cursor >= self._interim_chunk_bytes:
             end_byte = self._interim_cursor + self._interim_chunk_bytes
-            self._stash_slice(self._interim_cursor, end_byte)
+            self._stash_slice(self._interim_cursor, end_byte, reason="fixed")
             self._interim_cursor = end_byte
 
     def _stash_interim_tail(self) -> None:
-        if self._interim_chunk_bytes <= 0:
+        if not self._interim_enabled:
             return
         total = self._utterance_byte_len()
         if total > self._interim_cursor:
-            self._stash_slice(self._interim_cursor, total)
+            self._stash_slice(self._interim_cursor, total, reason="tail")
             self._interim_cursor = total
 
     def drain_interim(self) -> InterimSlice | None:
@@ -274,6 +318,8 @@ class Segmenter:
         self._interim_cursor = 0
         self._pending_interim.clear()
         self._preroll.clear()
+        if self._interim_chunker is not None:
+            self._interim_chunker.reset()
 
 
 def iter_chunks(pcm: bytes, chunk_size: int) -> Iterator[bytes]:
@@ -302,3 +348,26 @@ def segment_pcm(
     if tail is not None:
         utterances.append(tail)
     return utterances
+
+
+def collect_interim_slices(
+    pcm: bytes, vad: SileroVad, params: SegmenterParams | None = None
+) -> list[InterimSlice]:
+    """Run the segmenter and return all interim slice boundaries (no STT)."""
+    vad.reset_states()
+    seg = Segmenter(vad, params)
+    slices: list[InterimSlice] = []
+
+    def _drain() -> None:
+        while True:
+            interim = seg.drain_interim()
+            if interim is None:
+                break
+            slices.append(interim)
+
+    for chunk in iter_chunks(pcm, vad.chunk_size):
+        seg.process_chunk(chunk)
+        _drain()
+    seg.flush()
+    _drain()
+    return slices

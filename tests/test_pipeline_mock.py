@@ -86,7 +86,8 @@ async def test_pipeline_interim_emits_before_final(model_available, test_audio_p
     from vad_proxy.audio.decode import decode_to_pcm16
 
     settings = load_settings(
-        stt_backend="mock", llm_enabled=False, interim_enabled=True, interim_secs=0.5
+        stt_backend="mock", llm_enabled=False, interim_enabled=True, interim_secs=0.5,
+        interim_smart=False,
     )
     capture = CaptureOutput()
     pipeline = _build(settings, capture)

@@ -17,6 +17,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TEST_AUDIO = REPO_ROOT / "tests" / "data" / "test-123.mp3"
+CHUNKING_SPEECH_TEST = REPO_ROOT / "tests" / "data" / "chunking-speech-test.mp3"
 MODEL_PATH = REPO_ROOT / "models" / "silero_vad.onnx"
 
 
@@ -25,6 +26,13 @@ def test_audio_path() -> Path:
     if not TEST_AUDIO.exists():
         pytest.skip(f"Test audio missing: {TEST_AUDIO}")
     return TEST_AUDIO
+
+
+@pytest.fixture(scope="session")
+def chunking_speech_test_path() -> Path:
+    if not CHUNKING_SPEECH_TEST.exists():
+        pytest.skip(f"Chunking test audio missing: {CHUNKING_SPEECH_TEST}")
+    return CHUNKING_SPEECH_TEST
 
 
 @pytest.fixture(scope="session")
