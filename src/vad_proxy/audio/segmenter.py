@@ -47,7 +47,7 @@ class SegmenterParams:
     interim_min_secs: float = 0.5
     interim_smart: bool = True
     interim_dip_ratio: float = 0.35
-    interim_dip_hold_secs: float = 0.06
+    interim_dip_hold_secs: float = 0.04
 
 
 @dataclass

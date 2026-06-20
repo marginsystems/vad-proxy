@@ -48,7 +48,8 @@ the core VAD path still runs using the `mock` STT and a pass-through LLM.
 | `VAD_PROXY_LLM_ENABLED` | toggle the DeepSeek smart-layer |
 | `VAD_PROXY_OUTPUT` | `stdout` \| `webhook` \| `openai_chat` |
 
-See `.env.example` for the full list.
+See `.env.example` for the full list. To adapt timing and live interim chunking
+to your voice, mic, and room, see [docs/TUNING.md](docs/TUNING.md).
 
 ## Usage
 
@@ -117,6 +118,15 @@ Full restart with a clean log file (drops old errors/transcripts from prior runs
 ```bash
 pytest                 # offline tests + end-to-end CLI smoke test
 ```
+
+Tune interim chunk boundaries against your own audio:
+
+```bash
+python scripts/preview_interim_chunks.py path/to/your-sample.mp3
+```
+
+See [docs/TUNING.md](docs/TUNING.md) for VAD and interim settings, mic effects,
+and suggested profiles.
 
 The end-to-end smoke test runs the installed CLI against the bundled
 `tests/data/test-123.mp3` clip ("Hello this is a test, one two three") in a

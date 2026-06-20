@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     interim_min_secs: float = 0.5
     interim_smart: bool = True
     interim_dip_ratio: float = 0.35
-    interim_dip_hold_secs: float = 0.06
+    interim_dip_hold_secs: float = 0.04
     # Comma-separated browser app origins (full URLs with scheme).
     # localhost / 127.0.0.1 are always permitted for local dev.
     allowed_origins: str = ""
