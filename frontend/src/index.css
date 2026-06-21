@@ -2,9 +2,17 @@
   --radius: 2px;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --bg-page: #0b0d12;
-  --bg-page-stop: #11141c;
-  --bg-panel: rgba(18, 22, 31, 0.62);
+  /* Logo-matched palette */
+  --accent-blue: #2563eb;
+  --accent-blue-deep: #1e3a8a;
+  --accent-azure: #38bdf8;
+  --accent-teal: #14b8a6;
+  --accent-teal-deep: #0f766e;
+  --accent-mint: #6ee7b7;
+
+  --bg-page: #0a0a0f;
+  --bg-page-stop: #0b0d12;
+  --bg-panel: rgba(17, 24, 39, 0.6);
   --border-panel: rgba(255, 255, 255, 0.08);
   --border-panel-strong: rgba(255, 255, 255, 0.12);
 
@@ -13,9 +21,6 @@
   --text-muted: #6f7a90;
   --text-danger: #f6a9a9;
 
-  --accent: #3d8b6b;
-  --accent-hover: #4aa07d;
-  --accent-border: rgba(77, 182, 138, 0.55);
   --danger: #b14d4d;
   --danger-bg: rgba(177, 77, 77, 0.14);
   --danger-border: rgba(241, 111, 111, 0.45);
@@ -41,12 +46,12 @@ body {
   min-height: 100vh;
   background: radial-gradient(
       ellipse at 10% 20%,
-      rgba(45, 80, 120, 0.18) 0%,
+      rgba(37, 99, 235, 0.14) 0%,
       transparent 45%
     ),
     radial-gradient(
       ellipse at 90% 80%,
-      rgba(40, 90, 70, 0.14) 0%,
+      rgba(20, 184, 166, 0.11) 0%,
       transparent 45%
     ),
     linear-gradient(180deg, var(--bg-page) 0%, var(--bg-page-stop) 100%);
@@ -57,6 +62,29 @@ body {
   max-width: 720px;
   margin: 0 auto;
   padding: 2rem 1rem 4rem;
+}
+
+.app-header {
+  margin-bottom: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  min-height: 3.25rem;
+}
+
+.brand-logo {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.brand-text {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 header h1 {
@@ -78,9 +106,17 @@ header h1 {
   border-radius: var(--radius);
   padding: 1rem;
   margin-bottom: 1rem;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+
+.panel:hover {
+  border-color: rgba(56, 189, 248, 0.18);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(56, 189, 248, 0.08);
 }
 
 .panel h2 {
@@ -110,7 +146,8 @@ input {
   background: rgba(0, 0, 0, 0.28);
   color: var(--text-primary);
   font: inherit;
-  transition: border-color 150ms var(--ease), background 150ms var(--ease);
+  transition: border-color 150ms var(--ease), background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 input:hover {
@@ -119,8 +156,9 @@ input:hover {
 
 input:focus {
   outline: none;
-  border-color: var(--accent-border);
+  border-color: rgba(56, 189, 248, 0.55);
   background: rgba(0, 0, 0, 0.34);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .row {
@@ -145,12 +183,14 @@ input:focus {
   font-weight: 500;
   cursor: pointer;
   transition: background 150ms var(--ease), border-color 150ms var(--ease),
-    opacity 150ms var(--ease), transform 150ms var(--ease);
+    opacity 150ms var(--ease), transform 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }
 
 .btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.11);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 12px rgba(37, 99, 235, 0.12);
 }
 
 .btn:active:not(:disabled) {
@@ -158,19 +198,20 @@ input:focus {
 }
 
 .btn:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .btn.primary {
-  background: rgba(61, 139, 107, 0.2);
-  border-color: var(--accent-border);
-  color: #d4f5e6;
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: var(--accent-azure);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: rgba(61, 139, 107, 0.3);
-  border-color: rgba(77, 182, 138, 0.7);
+  background: rgba(37, 99, 235, 0.28);
+  border-color: rgba(56, 189, 248, 0.65);
+  box-shadow: 0 0 16px rgba(37, 99, 235, 0.18);
 }
 
 .btn.secondary {
@@ -201,7 +242,7 @@ input:focus {
   height: 4.5rem;
   margin-top: 0.75rem;
   padding: 0 0.75rem;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(10, 10, 15, 0.45);
   border: 1px solid var(--border-panel);
   border-radius: var(--radius);
   font-size: 0.8rem;
@@ -217,9 +258,9 @@ input:focus {
   min-width: 4.75rem;
   padding: 0 0.5rem;
   border-radius: var(--radius);
-  background: rgba(61, 139, 107, 0.2);
-  border: 1px solid var(--accent-border);
-  color: #d4f5e6;
+  background: rgba(37, 99, 235, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  color: var(--accent-azure);
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.75rem;
   font-weight: 500;
@@ -280,7 +321,7 @@ input:focus {
 .error-toast {
   position: fixed;
   left: 50%;
-  bottom: 1.5rem;
+  top: 1.5rem;
   transform: translateX(-50%);
   z-index: 50;
   max-width: min(32rem, calc(100vw - 2rem));
@@ -292,8 +333,8 @@ input:focus {
   border-radius: var(--radius);
   color: var(--text-danger);
   font-size: 0.9rem;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
@@ -366,6 +407,14 @@ input:focus {
 
 .collapse-toggle:hover {
   color: var(--text-primary);
+}
+
+.collapse-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  flex: 0 0 auto;
 }
 
 .event-log {

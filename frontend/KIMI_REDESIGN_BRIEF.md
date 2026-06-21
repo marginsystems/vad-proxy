@@ -90,3 +90,31 @@ all class names that are referenced by logic, and keep the component export sign
 ## When done
 
 Make sure `npm run build` (which runs `tsc --noEmit && vite build`) still passes.
+
+## Logo-matched palette (this pass)
+
+The brand logo lives at `public/vad-proxy-logo.png` — a faceted **V** with a **blue**
+left arm and **teal/cyan** right arm on black. The header already includes the logo
+(`.brand`, `.brand-logo`, `.brand-text` in `App.tsx`); preserve that markup.
+
+**Replace the current green accent palette** with logo-derived tokens:
+
+| Token | Suggested value | Use |
+| --- | --- | --- |
+| `--accent-blue` | `#2563eb` | Primary actions, OK pills |
+| `--accent-blue-deep` | `#1e3a8a` | Borders, subtle glow |
+| `--accent-azure` | `#38bdf8` | Highlights, focus rings |
+| `--accent-teal` | `#14b8a6` | Secondary accent |
+| `--accent-teal-deep` | `#0f766e` | Teal borders |
+| `--accent-mint` | `#6ee7b7` | Success text on buttons |
+| `--bg-page` | `#0a0a0f` | Page base |
+| `--bg-page-stop` | `#0b0d12` | Gradient stop |
+
+- Page background: dark radial gradients echoing logo blue (upper-left) and teal
+  (lower-right) — keep `background-attachment: fixed`.
+- Glass panels: increase frosted effect (`backdrop-filter: blur(20px)`), semi-transparent
+  navy/teal-tinted backgrounds, 1px borders with subtle blue/teal glow on hover/focus.
+- Primary buttons: blue/teal tint instead of green; danger states unchanged.
+- Do **not** change favicon/SEO wiring in `index.html` (already done).
+
+Apply all styling via CSS variables on `:root` so the palette is cohesive.
