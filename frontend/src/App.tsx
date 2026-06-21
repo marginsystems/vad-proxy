@@ -16,7 +16,7 @@ export default function App() {
       <header className="app-header">
         <div className="brand">
           <img
-            src="/vad-proxy-logo.png"
+            src="/assets/vad-proxy-logo.png"
             alt="vad-proxy"
             width={40}
             height={40}
