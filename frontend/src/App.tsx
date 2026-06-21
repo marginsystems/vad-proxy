@@ -13,12 +13,23 @@ export default function App() {
 
   return (
     <div className="app">
-      <header>
-        <h1>vad-proxy Voice Lab</h1>
-        <p className="subtitle">
-          Live-test mic → VAD → STT → transcript against your local Docker
-          container.
-        </p>
+      <header className="app-header">
+        <div className="brand">
+          <img
+            src="/assets/vad-proxy-logo.png"
+            alt="vad-proxy"
+            width={40}
+            height={40}
+            className="brand-logo"
+          />
+          <div className="brand-text">
+            <h1>vad-proxy Voice Lab</h1>
+            <p className="subtitle">
+              Live-test mic → VAD → STT → transcript against your local Docker
+              container.
+            </p>
+          </div>
+        </div>
       </header>
 
       {session.error && (

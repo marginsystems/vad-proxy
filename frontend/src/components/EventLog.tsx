@@ -15,7 +15,10 @@ export function EventLog({ logs }: Props) {
         className="collapse-toggle"
         onClick={() => setOpen((v) => !v)}
       >
-        Event log ({logs.length}) {open ? "▾" : "▸"}
+        Event log ({logs.length}){" "}
+        <span className="collapse-arrow" aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
       </button>
       {open && (
         <pre className="event-log">
