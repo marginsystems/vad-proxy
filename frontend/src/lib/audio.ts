@@ -55,19 +55,35 @@ export type MicCapture = {
   stop: () => Promise<void>;
 };
 
-function formatMicError(err: unknown, stage: "permission" | "worklet"): string {
+function formatMicError(
+  err: unknown,
+  stage: "permission" | "worklet",
+  audioInputCount = 0,
+): string {
   const name = err instanceof DOMException ? err.name : "";
   const message = err instanceof Error ? err.message : String(err);
 
   if (stage === "permission") {
     if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-      return "Microphone permission denied. Allow mic access for this site in Firefox settings.";
+      return (
+        "Microphone permission denied in Firefox. Click the lock icon in the " +
+        "address bar and set Microphone to Allow, then reload."
+      );
     }
     if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      if (audioInputCount === 0) {
+        return (
+          "Firefox cannot see any microphone inputs. On macOS, enable Firefox " +
+          "under System Settings → Privacy & Security → Microphone (site Allow " +
+          "is not enough). Private/incognito windows work once OS access is granted. " +
+          "Then quit and reopen Firefox."
+        );
+      }
       return (
-        "No microphone found or Firefox cannot access it. " +
-        "Check that a mic is connected, then allow microphone access for Firefox " +
-        "in macOS System Settings → Privacy & Security → Microphone."
+        "Firefox blocked the microphone at the OS level (common on macOS). " +
+        "You may have clicked Allow in the browser, but also enable Firefox in " +
+        "System Settings → Privacy & Security → Microphone, quit Firefox, and retry. " +
+        `(${audioInputCount} input device${audioInputCount === 1 ? "" : "s"} visible.)`
       );
     }
     if (name === "NotReadableError" || name === "TrackStartError") {
@@ -82,6 +98,15 @@ function formatMicError(err: unknown, stage: "permission" | "worklet"): string {
   return message;
 }
 
+async function listAudioInputs(): Promise<MediaDeviceInfo[]> {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === "audioinput");
+  } catch {
+    return [];
+  }
+}
+
 /** Request mic access with relaxed constraints (Firefox rejects channelCount: 1). */
 async function getAudioStream(): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -90,12 +115,13 @@ async function getAudioStream(): Promise<MediaStream> {
     );
   }
 
+  let lastError: unknown;
+
   const attempts: MediaStreamConstraints[] = [
-    { audio: { echoCancellation: true, noiseSuppression: true }, video: false },
     { audio: true, video: false },
+    { audio: { echoCancellation: true, noiseSuppression: true }, video: false },
   ];
 
-  let lastError: unknown;
   for (const constraints of attempts) {
     try {
       return await navigator.mediaDevices.getUserMedia(constraints);
@@ -104,7 +130,20 @@ async function getAudioStream(): Promise<MediaStream> {
     }
   }
 
-  throw new Error(formatMicError(lastError, "permission"));
+  const inputs = await listAudioInputs();
+  for (const device of inputs) {
+    if (!device.deviceId) continue;
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { ideal: device.deviceId } },
+        video: false,
+      });
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw new Error(formatMicError(lastError, "permission", inputs.length));
 }
 
 async function loadPcmWorklet(audioContext: AudioContext): Promise<void> {
