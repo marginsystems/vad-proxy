@@ -43,6 +43,7 @@ Open **http://localhost:5173**
 |---------|-----|
 | Health check failed | Run `docker compose up -d` and confirm `curl http://127.0.0.1:8080/health` |
 | 4403 Forbidden | Your browser origin is not in `VAD_PROXY_ALLOWED_ORIGINS` (localhost always works) |
+| Mic access failed (Firefox) | Allow mic for Firefox in macOS System Settings → Privacy → Microphone; avoid `channelCount` constraints — Voice Lab uses relaxed `{ audio: true }` fallback |
 | Mic access failed | Grant browser microphone permission (HTTPS not required on localhost) |
 | No transcript | Check `VAD_PROXY_STT_BACKEND` in `.env`; mock STT still returns text for test audio patterns |
 
