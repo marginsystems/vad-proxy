@@ -1,5 +1,5 @@
 import type { HealthResponse } from "../lib/types";
-import { DEFAULT_WS_URL, PROD_WS_URL } from "../lib/types";
+import { localDevWsUrl, PROD_WS_URL } from "../lib/types";
 
 type Props = {
   wsUrl: string;
@@ -25,7 +25,7 @@ export function ConnectionPanel({
         <button
           type="button"
           className="btn secondary"
-          onClick={() => onWsUrlChange(DEFAULT_WS_URL)}
+          onClick={() => onWsUrlChange(localDevWsUrl())}
         >
           Local
         </button>

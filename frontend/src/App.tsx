@@ -1,13 +1,14 @@
 import { useState } from "react";
+import { ChunkDebugPanel } from "./components/ChunkDebugPanel";
 import { ConnectionPanel } from "./components/ConnectionPanel";
 import { Controls } from "./components/Controls";
 import { EventLog } from "./components/EventLog";
 import { TranscriptPanel } from "./components/TranscriptPanel";
 import { useVoiceSession } from "./hooks/useVoiceSession";
-import { DEFAULT_WS_URL } from "./lib/types";
+import { localDevWsUrl } from "./lib/types";
 
 export default function App() {
-  const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
+  const [wsUrl, setWsUrl] = useState(localDevWsUrl());
 
   const session = useVoiceSession(wsUrl);
 
@@ -58,6 +59,12 @@ export default function App() {
         latest={session.latest}
         liveInterim={session.liveInterim}
         transcripts={session.transcripts}
+      />
+
+      <ChunkDebugPanel
+        turns={session.chunkDebugTurns}
+        enabled={session.health?.debug_interim_chunks === true}
+        interimEnabled={session.health?.interim_enabled !== false}
       />
 
       <EventLog logs={session.logs} />

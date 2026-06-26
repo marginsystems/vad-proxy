@@ -11,6 +11,16 @@ import strawberry
 from vad_proxy.graphql.session import SessionManager, VoiceEventData
 
 
+@strawberry.type
+class InterimChunk:
+    index: int
+    start_secs: float
+    end_secs: float
+    reason: str
+    text: str
+    audio_base64: str
+
+
 def _to_voice_event(data: VoiceEventData) -> "VoiceEvent":
     return VoiceEvent(
         kind=data.kind,
@@ -22,6 +32,17 @@ def _to_voice_event(data: VoiceEventData) -> "VoiceEvent":
         end_secs=data.end_secs,
         stt_backend=data.stt_backend,
         interim=data.interim,
+        chunks=[
+            InterimChunk(
+                index=c.index,
+                start_secs=c.start_secs,
+                end_secs=c.end_secs,
+                reason=c.reason,
+                text=c.text,
+                audio_base64=c.audio_base64,
+            )
+            for c in data.chunks
+        ],
     )
 
 
@@ -36,6 +57,7 @@ class VoiceEvent:
     end_secs: float | None = None
     stt_backend: str | None = None
     interim: bool = False
+    chunks: list[InterimChunk] | None = None
 
 
 @strawberry.type

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startMicCapture } from "../lib/audio";
+import { formatError, formatFetchError } from "../lib/errors";
 import { fetchHealth, VoiceGraphqlSession } from "../lib/graphql";
 import type {
+  ChunkDebugTurn,
   HealthResponse,
   LogEntry,
   SessionStatus,
@@ -16,6 +18,7 @@ export function useVoiceSession(wsUrl: string) {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [events, setEvents] = useState<VoiceEvent[]>([]);
   const [liveInterim, setLiveInterim] = useState("");
+  const [chunkDebugTurns, setChunkDebugTurns] = useState<ChunkDebugTurn[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
   const logIdRef = useRef(0);
@@ -32,13 +35,14 @@ export function useVoiceSession(wsUrl: string) {
   }, []);
 
   const refreshHealth = useCallback(async () => {
+    const healthUrl = healthUrlFromWs(wsUrl);
     try {
-      const data = (await fetchHealth(healthUrlFromWs(wsUrl))) as HealthResponse;
+      const data = (await fetchHealth(healthUrl)) as HealthResponse;
       setHealth(data);
       setHealthError(null);
     } catch (e) {
       setHealth(null);
-      setHealthError(e instanceof Error ? e.message : String(e));
+      setHealthError(formatFetchError(e, healthUrl));
     }
   }, [wsUrl]);
 
@@ -51,11 +55,24 @@ export function useVoiceSession(wsUrl: string) {
     setStatus("connecting");
     setEvents([]);
     setLiveInterim("");
+    setChunkDebugTurns([]);
     setLogs([]);
 
     const session = new VoiceGraphqlSession(wsUrl, {
       onEvent: (ev) => {
         pushLog(ev.kind, ev);
+        if (ev.kind === "chunk_debug" && ev.chunks?.length) {
+          const chunks = ev.chunks;
+          setChunkDebugTurns((prev) => [
+            {
+              startSecs: ev.startSecs ?? chunks[0].startSecs,
+              endSecs: ev.endSecs ?? chunks[chunks.length - 1].endSecs,
+              chunks,
+            },
+            ...prev.slice(0, 4),
+          ]);
+          return;
+        }
         if (ev.kind === "transcript" && ev.interim) {
           setLiveInterim(ev.text ?? "");
           return;
@@ -86,7 +103,8 @@ export function useVoiceSession(wsUrl: string) {
       pushLog("status", "Microphone started");
     } catch (e) {
       setLiveInterim("");
-      setError(`Mic access failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = formatError(e);
+      setError(msg.startsWith("Microphone") || msg.startsWith("Firefox") || msg.startsWith("Audio capture") ? msg : `Session failed: ${msg}`);
       setStatus("error");
       await session.stop();
       sessionRef.current = null;
@@ -126,6 +144,7 @@ export function useVoiceSession(wsUrl: string) {
     transcripts,
     latest,
     liveInterim,
+    chunkDebugTurns,
     logs,
     refreshHealth,
     start,

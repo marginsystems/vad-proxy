@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     interim_smart: bool = True
     interim_dip_ratio: float = 0.35
     interim_dip_hold_secs: float = 0.04
+    # Emit per-chunk WAV + metadata over GraphQL after each turn (Voice Lab replay).
+    debug_interim_chunks: bool = False
     # Comma-separated browser app origins (full URLs with scheme).
     # localhost / 127.0.0.1 are always permitted for local dev.
     allowed_origins: str = ""

@@ -12,20 +12,32 @@ flushes on shutdown, closes resources, and signals the subscription via
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import AsyncIterator, Literal
 
+from vad_proxy.audio.decode import pcm16_to_wav
 from vad_proxy.config import Settings
-from vad_proxy.output.base import FinalText, OutputAdapter
+from vad_proxy.output.base import FinalText, InterimChunkRecord, OutputAdapter
 from vad_proxy.pipeline import VadProxyPipeline, build_pipeline
 
 _log = logging.getLogger(__name__)
 
-EventKind = Literal["session_started", "transcript"]
+EventKind = Literal["session_started", "transcript", "chunk_debug"]
 
 _INPUT_QUEUE_MAX = 128
+
+
+@dataclass
+class InterimChunkEvent:
+    index: int
+    start_secs: float
+    end_secs: float
+    reason: str
+    text: str
+    audio_base64: str
 
 
 @dataclass
@@ -41,6 +53,19 @@ class VoiceEventData:
     end_secs: float | None = None
     stt_backend: str | None = None
     interim: bool = False
+    chunks: list[InterimChunkEvent] = field(default_factory=list)
+
+
+def _chunk_to_event(chunk: InterimChunkRecord) -> InterimChunkEvent:
+    wav = pcm16_to_wav(chunk.pcm, chunk.sample_rate)
+    return InterimChunkEvent(
+        index=chunk.index,
+        start_secs=chunk.start_secs,
+        end_secs=chunk.end_secs,
+        reason=chunk.reason,
+        text=chunk.text,
+        audio_base64=base64.b64encode(wav).decode("ascii"),
+    )
 
 
 class QueueOutputAdapter(OutputAdapter):
@@ -75,6 +100,18 @@ class QueueOutputAdapter(OutputAdapter):
                 start_secs=start_secs,
                 end_secs=end_secs,
                 stt_backend=stt_backend,
+            )
+        )
+
+    async def send_chunk_debug(self, chunks: list[InterimChunkRecord]) -> None:
+        if not chunks:
+            return
+        await self._queue.put(
+            VoiceEventData(
+                kind="chunk_debug",
+                start_secs=chunks[0].start_secs,
+                end_secs=chunks[-1].end_secs,
+                chunks=[_chunk_to_event(c) for c in chunks],
             )
         )
 

@@ -120,6 +120,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "llm_enabled": settings.llm_enabled,
             "output": settings.output,
             "allowed_origins": _effective_origins(settings),
+            "interim_enabled": settings.interim_enabled,
+            "debug_interim_chunks": settings.debug_interim_chunks,
         }
 
     @app.websocket("/ws")
