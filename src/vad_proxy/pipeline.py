@@ -20,7 +20,7 @@ from vad_proxy.audio.vad import SileroVad
 from vad_proxy.config import Settings
 from vad_proxy.llm.base import SmartLayer
 from vad_proxy.llm.factory import build_smart_layer
-from vad_proxy.output.base import FinalText, OutputAdapter
+from vad_proxy.output.base import FinalText, InterimChunkRecord, OutputAdapter
 from vad_proxy.output.factory import build_output
 from vad_proxy.personalization.base import Personalizer
 from vad_proxy.personalization.factory import build_personalizer
@@ -80,6 +80,7 @@ class VadProxyPipeline:
         self._turn_stt_backend = ""
         self._turn_stt_confidence: float | None = None
         self._turn_epoch = 0
+        self._turn_debug_chunks: list[InterimChunkRecord] = []
 
     def _reset_turn_if_new_utterance(self) -> None:
         epoch = self._segmenter.utterance_epoch
@@ -87,6 +88,7 @@ class VadProxyPipeline:
             self._turn_texts.clear()
             self._turn_stt_backend = ""
             self._turn_stt_confidence = None
+            self._turn_debug_chunks.clear()
             self._turn_epoch = epoch
 
     async def feed(self, pcm: bytes) -> None:
@@ -120,6 +122,18 @@ class VadProxyPipeline:
                 interim_slice.pcm, self.settings.sample_rate
             )
             text = transcript.text.strip()
+            if self.settings.debug_interim_chunks:
+                self._turn_debug_chunks.append(
+                    InterimChunkRecord(
+                        index=len(self._turn_debug_chunks) + 1,
+                        start_secs=interim_slice.start_secs,
+                        end_secs=interim_slice.end_secs,
+                        reason=interim_slice.reason or "unknown",
+                        text=text,
+                        pcm=interim_slice.pcm,
+                        sample_rate=self.settings.sample_rate,
+                    )
+                )
             if not text:
                 continue
             self._turn_texts.append(text)
@@ -135,15 +149,18 @@ class VadProxyPipeline:
             )
 
     async def _handle_utterance(self, utterance: Utterance) -> None:
+        turn_confidence: float | None = None
         if self.settings.interim_enabled:
             self._reset_turn_if_new_utterance()
             await self._drain_and_emit_interims()
             raw_text = " ".join(self._turn_texts)
             stt_backend = self._turn_stt_backend or self.c.stt.name
             turn_confidence = self._turn_stt_confidence
+            debug_chunks = list(self._turn_debug_chunks)
             self._turn_texts.clear()
             self._turn_stt_backend = ""
             self._turn_stt_confidence = None
+            self._turn_debug_chunks.clear()
             self._turn_epoch = self._segmenter.utterance_epoch
             raw_text = self.c.personalizer.bias_vocabulary(raw_text)
             if not raw_text.strip():
@@ -154,6 +171,7 @@ class VadProxyPipeline:
             )
             raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
             stt_backend = transcript.backend
+            debug_chunks = []
             if not raw_text.strip():
                 return
 
@@ -174,7 +192,6 @@ class VadProxyPipeline:
         elif turn_confidence is not None:
             final.meta["stt_confidence"] = turn_confidence
 
-        # Personalization dataset logging (best-effort, never blocks output).
         await self.c.personalizer.record_sample(
             utterance.pcm,
             utterance.sample_rate,
@@ -191,6 +208,8 @@ class VadProxyPipeline:
         )
 
         await self.c.output.send(final)
+        if self.settings.debug_interim_chunks and debug_chunks:
+            await self.c.output.send_chunk_debug(debug_chunks)
 
     async def aclose(self) -> None:
         await asyncio.gather(

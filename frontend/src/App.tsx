@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChunkDebugPanel } from "./components/ChunkDebugPanel";
 import { ConnectionPanel } from "./components/ConnectionPanel";
 import { Controls } from "./components/Controls";
 import { EventLog } from "./components/EventLog";
@@ -58,6 +59,12 @@ export default function App() {
         latest={session.latest}
         liveInterim={session.liveInterim}
         transcripts={session.transcripts}
+      />
+
+      <ChunkDebugPanel
+        turns={session.chunkDebugTurns}
+        enabled={session.health?.debug_interim_chunks === true}
+        interimEnabled={session.health?.interim_enabled !== false}
       />
 
       <EventLog logs={session.logs} />

@@ -6,6 +6,7 @@ import type { VoiceEvent } from "./types";
 const LISTEN_SUB = `subscription Listen {
   listen(sampleRate: 16000) {
     kind sessionId text turnComplete endPhrase startSecs endSecs sttBackend interim
+    chunks { index startSecs endSecs reason text audioBase64 }
   }
 }`;
 

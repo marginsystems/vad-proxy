@@ -8,6 +8,19 @@ from typing import Any
 
 
 @dataclass
+class InterimChunkRecord:
+    """One interim STT slice captured for debug replay."""
+
+    index: int
+    start_secs: float
+    end_secs: float
+    reason: str
+    text: str
+    pcm: bytes
+    sample_rate: int = 16000
+
+
+@dataclass
 class FinalText:
     """The finished, corrected transcript plus metadata about its provenance."""
 
@@ -34,6 +47,9 @@ class OutputAdapter(ABC):
         self, text: str, start_secs: float, end_secs: float, stt_backend: str
     ) -> None:
         """Deliver a raw interim transcript (un-polished; optional hook)."""
+
+    async def send_chunk_debug(self, chunks: list[InterimChunkRecord]) -> None:
+        """Deliver interim slice audio + metadata for debug replay (optional hook)."""
 
     async def aclose(self) -> None:
         """Release any held resources."""

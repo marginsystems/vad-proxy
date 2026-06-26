@@ -90,6 +90,10 @@ type Subscription {
   `0.04`), `VAD_PROXY_INTERIM_SMART=false` restores fixed-width chunks. Preview
   boundaries with `python scripts/preview_interim_chunks.py your-sample.mp3`.
   Full tuning guide: [docs/TUNING.md](TUNING.md).
+- **Chunk debug** (`VAD_PROXY_DEBUG_INTERIM_CHUNKS=true`, interim on): after each
+  turn the server emits a `chunk_debug` event with per-slice WAV audio, STT text,
+  timestamps, and cut reason (`dip` / `max` / `tail`). Voice Lab shows replay
+  controls for each slice.
 
 ## Client flow
 

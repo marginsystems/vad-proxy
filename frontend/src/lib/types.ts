@@ -1,4 +1,19 @@
-export type VoiceEventKind = "session_started" | "transcript";
+export type VoiceEventKind = "session_started" | "transcript" | "chunk_debug";
+
+export type InterimChunk = {
+  index: number;
+  startSecs: number;
+  endSecs: number;
+  reason: string;
+  text: string;
+  audioBase64: string;
+};
+
+export type ChunkDebugTurn = {
+  startSecs: number;
+  endSecs: number;
+  chunks: InterimChunk[];
+};
 
 export type VoiceEvent = {
   kind: VoiceEventKind;
@@ -10,6 +25,7 @@ export type VoiceEvent = {
   endSecs?: number | null;
   sttBackend?: string | null;
   interim?: boolean | null;
+  chunks?: InterimChunk[] | null;
 };
 
 export type HealthResponse = {
@@ -19,6 +35,8 @@ export type HealthResponse = {
   llm_enabled: boolean;
   output: string;
   allowed_origins: string[];
+  interim_enabled?: boolean;
+  debug_interim_chunks?: boolean;
 };
 
 export type SessionStatus = "idle" | "connecting" | "listening" | "error";
