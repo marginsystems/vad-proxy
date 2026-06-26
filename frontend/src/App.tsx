@@ -4,10 +4,10 @@ import { Controls } from "./components/Controls";
 import { EventLog } from "./components/EventLog";
 import { TranscriptPanel } from "./components/TranscriptPanel";
 import { useVoiceSession } from "./hooks/useVoiceSession";
-import { DEFAULT_WS_URL } from "./lib/types";
+import { localDevWsUrl } from "./lib/types";
 
 export default function App() {
-  const [wsUrl, setWsUrl] = useState(DEFAULT_WS_URL);
+  const [wsUrl, setWsUrl] = useState(localDevWsUrl);
 
   const session = useVoiceSession(wsUrl);
 

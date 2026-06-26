@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { startMicCapture } from "../lib/audio";
+import { formatError, formatFetchError } from "../lib/errors";
 import { fetchHealth, VoiceGraphqlSession } from "../lib/graphql";
 import type {
   HealthResponse,
@@ -32,13 +33,14 @@ export function useVoiceSession(wsUrl: string) {
   }, []);
 
   const refreshHealth = useCallback(async () => {
+    const healthUrl = healthUrlFromWs(wsUrl);
     try {
-      const data = (await fetchHealth(healthUrlFromWs(wsUrl))) as HealthResponse;
+      const data = (await fetchHealth(healthUrl)) as HealthResponse;
       setHealth(data);
       setHealthError(null);
     } catch (e) {
       setHealth(null);
-      setHealthError(e instanceof Error ? e.message : String(e));
+      setHealthError(formatFetchError(e, healthUrl));
     }
   }, [wsUrl]);
 
@@ -86,7 +88,8 @@ export function useVoiceSession(wsUrl: string) {
       pushLog("status", "Microphone started");
     } catch (e) {
       setLiveInterim("");
-      setError(`Mic access failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = formatError(e);
+      setError(msg.startsWith("Mic access") ? msg : `Session failed: ${msg}`);
       setStatus("error");
       await session.stop();
       sessionRef.current = null;

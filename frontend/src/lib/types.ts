@@ -30,8 +30,17 @@ export type LogEntry = {
   payload: unknown;
 };
 
-export const DEFAULT_WS_URL = "ws://127.0.0.1:8080/graphql";
 export const PROD_WS_URL = "wss://voice.biosystems.dev/graphql";
+
+/** Same-origin WS URL — works with Vite dev proxy when only port 5173 is forwarded. */
+export function localDevWsUrl(): string {
+  if (typeof window === "undefined") return "ws://127.0.0.1:8080/graphql";
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/graphql`;
+}
+
+/** @deprecated use localDevWsUrl() — kept for backwards compatibility in tests */
+export const DEFAULT_WS_URL = "ws://127.0.0.1:8080/graphql";
 
 export function healthUrlFromWs(wsUrl: string): string {
   try {

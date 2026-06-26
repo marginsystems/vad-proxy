@@ -1,5 +1,6 @@
 import { createClient, type Client } from "graphql-ws";
 import { int16ToBase64 } from "./audio";
+import { formatError } from "./errors";
 import type { VoiceEvent } from "./types";
 
 const LISTEN_SUB = `subscription Listen {
@@ -30,26 +31,59 @@ export class VoiceGraphqlSession {
   private client: Client | null = null;
   private disposeSub: (() => void) | null = null;
   private sessionId: string | null = null;
-  private sessionReady: Promise<void>;
+  private sessionReady!: Promise<void>;
   private resolveSessionReady!: () => void;
+  private rejectSessionReady!: (err: Error) => void;
+  private sessionSettled = false;
 
   constructor(
     private readonly wsUrl: string,
     private readonly callbacks: VoiceSessionCallbacks,
   ) {
-    this.sessionReady = new Promise((resolve) => {
-      this.resolveSessionReady = resolve;
+    this.resetSessionReady();
+  }
+
+  private resetSessionReady(): void {
+    this.sessionSettled = false;
+    this.sessionReady = new Promise((resolve, reject) => {
+      this.resolveSessionReady = () => {
+        if (this.sessionSettled) return;
+        this.sessionSettled = true;
+        resolve();
+      };
+      this.rejectSessionReady = (err: Error) => {
+        if (this.sessionSettled) return;
+        this.sessionSettled = true;
+        reject(err);
+      };
     });
   }
 
-  async waitForSession(): Promise<void> {
-    await this.sessionReady;
+  private failSession(err: unknown): void {
+    const message = formatError(err);
+    this.callbacks.onError(message);
+    this.rejectSessionReady(new Error(message));
+  }
+
+  async waitForSession(timeoutMs = 15_000): Promise<void> {
+    await Promise.race([
+      this.sessionReady,
+      new Promise<void>((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Timed out connecting to ${this.wsUrl}. Is vad-proxy running?`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
   }
 
   start(): void {
-    this.sessionReady = new Promise((resolve) => {
-      this.resolveSessionReady = resolve;
-    });
+    this.resetSessionReady();
     this.client = createClient({
       url: this.wsUrl,
       on: {
@@ -60,8 +94,11 @@ export class VoiceGraphqlSession {
               ? (event as { code?: number }).code
               : undefined;
           if (code === 4403) {
-            this.callbacks.onError("Origin not allowed by server (4403)");
+            this.failSession("Origin not allowed by server (4403)");
           }
+        },
+        error: (err) => {
+          this.failSession(err);
         },
       },
     });
@@ -80,9 +117,7 @@ export class VoiceGraphqlSession {
           }
         },
         error: (err) => {
-          this.callbacks.onError(
-            err instanceof Error ? err.message : String(err),
-          );
+          this.failSession(err);
         },
         complete: () => this.callbacks.onStatus("Subscription complete"),
       },
@@ -100,9 +135,7 @@ export class VoiceGraphqlSession {
         /* one-shot mutation */
       }
     } catch (err) {
-      this.callbacks.onError(
-        `appendAudio failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.callbacks.onError(`appendAudio failed: ${formatError(err)}`);
     }
   }
 
@@ -116,9 +149,7 @@ export class VoiceGraphqlSession {
         /* one-shot */
       }
     } catch (err) {
-      this.callbacks.onError(
-        `endUtterance failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.callbacks.onError(`endUtterance failed: ${formatError(err)}`);
     }
   }
 

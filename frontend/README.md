@@ -41,7 +41,7 @@ Open **http://localhost:5173**
 
 | Symptom | Fix |
 |---------|-----|
-| Health check failed | Run `docker compose up -d` and confirm `curl http://127.0.0.1:8080/health` |
+| Health check failed | Run `docker compose up -d` on the server. In dev, use **Local** mode (`ws://localhost:5173/graphql`) so Vite proxies to port 8080 — you only need port 5173 forwarded, not 8080 |
 | 4403 Forbidden | Your browser origin is not in `VAD_PROXY_ALLOWED_ORIGINS` (localhost always works) |
 | Mic access failed (Firefox on macOS) | Browser **Allow** is not enough — also enable **Firefox** in System Settings → Privacy & Security → Microphone, then **quit and reopen Firefox**. Incognito is fine once OS access is granted |
 | Mic access failed | Grant browser microphone permission (HTTPS not required on localhost) |
