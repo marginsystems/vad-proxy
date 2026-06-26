@@ -8,7 +8,7 @@ import { useVoiceSession } from "./hooks/useVoiceSession";
 import { localDevWsUrl } from "./lib/types";
 
 export default function App() {
-  const [wsUrl, setWsUrl] = useState(localDevWsUrl);
+  const [wsUrl, setWsUrl] = useState(localDevWsUrl());
 
   const session = useVoiceSession(wsUrl);
 

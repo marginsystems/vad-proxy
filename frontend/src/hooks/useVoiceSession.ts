@@ -104,7 +104,7 @@ export function useVoiceSession(wsUrl: string) {
     } catch (e) {
       setLiveInterim("");
       const msg = formatError(e);
-      setError(msg.startsWith("Mic access") ? msg : `Session failed: ${msg}`);
+      setError(msg.startsWith("Microphone") || msg.startsWith("Firefox") || msg.startsWith("Audio capture") ? msg : `Session failed: ${msg}`);
       setStatus("error");
       await session.stop();
       sessionRef.current = null;
