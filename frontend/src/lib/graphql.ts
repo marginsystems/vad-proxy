@@ -36,12 +36,16 @@ export class VoiceGraphqlSession {
   private resolveSessionReady!: () => void;
   private rejectSessionReady!: (err: Error) => void;
   private sessionSettled = false;
+  private subscriptionClosed!: Promise<void>;
+  private resolveSubscriptionClosed!: () => void;
+  private turnWaiters: Array<() => void> = [];
 
   constructor(
     private readonly wsUrl: string,
     private readonly callbacks: VoiceSessionCallbacks,
   ) {
     this.resetSessionReady();
+    this.resetSubscriptionClosed();
   }
 
   private resetSessionReady(): void {
@@ -60,10 +64,41 @@ export class VoiceGraphqlSession {
     });
   }
 
+  private resetSubscriptionClosed(): void {
+    this.subscriptionClosed = new Promise((resolve) => {
+      this.resolveSubscriptionClosed = resolve;
+    });
+  }
+
+  private deliverEvent(ev: VoiceEvent): void {
+    this.callbacks.onEvent(ev);
+    if (
+      ev.kind === "chunk_debug" ||
+      (ev.kind === "transcript" && !ev.interim)
+    ) {
+      for (const wake of this.turnWaiters) wake();
+      this.turnWaiters = [];
+    }
+  }
+
+  /** Wait for a final transcript or chunk_debug after flushing an utterance. */
+  waitForTurnEvents(timeoutMs = 3_000): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs);
+      this.turnWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
   private failSession(err: unknown): void {
     const message = formatError(err);
     this.callbacks.onError(message);
     this.rejectSessionReady(new Error(message));
+    this.resolveSubscriptionClosed();
+    for (const wake of this.turnWaiters) wake();
+    this.turnWaiters = [];
   }
 
   async waitForSession(timeoutMs = 15_000): Promise<void> {
@@ -85,6 +120,8 @@ export class VoiceGraphqlSession {
 
   start(): void {
     this.resetSessionReady();
+    this.resetSubscriptionClosed();
+    this.turnWaiters = [];
     this.client = createClient({
       url: this.wsUrl,
       on: {
@@ -110,7 +147,7 @@ export class VoiceGraphqlSession {
         next: (msg) => {
           const ev = msg.data?.listen as VoiceEvent | undefined;
           if (!ev) return;
-          this.callbacks.onEvent(ev);
+          this.deliverEvent(ev);
           if (ev.kind === "session_started" && ev.sessionId) {
             this.sessionId = ev.sessionId;
             this.resolveSessionReady();
@@ -120,7 +157,10 @@ export class VoiceGraphqlSession {
         error: (err) => {
           this.failSession(err);
         },
-        complete: () => this.callbacks.onStatus("Subscription complete"),
+        complete: () => {
+          this.callbacks.onStatus("Subscription complete");
+          this.resolveSubscriptionClosed();
+        },
       },
     );
   }
@@ -147,7 +187,7 @@ export class VoiceGraphqlSession {
         query: END_MUTATION,
         variables: { sessionId: this.sessionId },
       })) {
-        /* one-shot */
+        /* one-shot mutation */
       }
     } catch (err) {
       this.callbacks.onError(`endUtterance failed: ${formatError(err)}`);
@@ -155,6 +195,10 @@ export class VoiceGraphqlSession {
   }
 
   async stop(): Promise<void> {
+    // Flush in-progress speech before tearing down so final + chunk_debug arrive.
+    await this.endUtterance();
+    await this.waitForTurnEvents();
+
     if (this.client && this.sessionId) {
       try {
         for await (const _ of this.client.iterate({
@@ -167,11 +211,19 @@ export class VoiceGraphqlSession {
         /* best-effort */
       }
     }
+
+    await Promise.race([
+      this.subscriptionClosed,
+      new Promise((resolve) => setTimeout(resolve, 3_000)),
+    ]);
+
     this.disposeSub?.();
     this.disposeSub = null;
     this.client?.dispose();
     this.client = null;
     this.sessionId = null;
+    for (const wake of this.turnWaiters) wake();
+    this.turnWaiters = [];
   }
 }
 

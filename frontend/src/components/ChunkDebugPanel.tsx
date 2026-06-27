@@ -78,7 +78,8 @@ export function ChunkDebugPanel({ turns, enabled, interimEnabled }: Props) {
         </>
       ) : (
         <p className="muted">
-          Complete a speaking turn to see how interim chunking sliced your audio.
+          Complete a speaking turn (pause, End utterance, or Stop) to see how interim
+          chunking sliced your audio.
         </p>
       )}
     </section>

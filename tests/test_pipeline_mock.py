@@ -26,6 +26,7 @@ class CaptureOutput(OutputAdapter):
     def __init__(self):
         self.items: list[FinalText] = []
         self.interims: list[tuple[str, float, float, str]] = []
+        self.chunk_debug: list = []
 
     async def send(self, final: FinalText) -> None:
         self.items.append(final)
@@ -34,6 +35,9 @@ class CaptureOutput(OutputAdapter):
         self, text: str, start_secs: float, end_secs: float, stt_backend: str
     ) -> None:
         self.interims.append((text, start_secs, end_secs, stt_backend))
+
+    async def send_chunk_debug(self, chunks) -> None:
+        self.chunk_debug.append(chunks)
 
 
 def _build(settings, capture) -> VadProxyPipeline:

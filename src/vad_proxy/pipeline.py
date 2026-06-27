@@ -164,6 +164,8 @@ class VadProxyPipeline:
             self._turn_epoch = self._segmenter.utterance_epoch
             raw_text = self.c.personalizer.bias_vocabulary(raw_text)
             if not raw_text.strip():
+                if self.settings.debug_interim_chunks and debug_chunks:
+                    await self.c.output.send_chunk_debug(debug_chunks)
                 return
         else:
             transcript = await self.c.stt.transcribe(
