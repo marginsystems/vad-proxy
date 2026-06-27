@@ -195,9 +195,10 @@ export class VoiceGraphqlSession {
   }
 
   async stop(): Promise<void> {
-    // Flush in-progress speech before tearing down so final + chunk_debug arrive.
+    // Register waiter before flushing so chunk_debug can't arrive before it.
+    const turnDone = this.waitForTurnEvents();
     await this.endUtterance();
-    await this.waitForTurnEvents();
+    await turnDone;
 
     if (this.client && this.sessionId) {
       try {
