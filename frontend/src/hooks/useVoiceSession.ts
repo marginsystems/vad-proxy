@@ -118,6 +118,7 @@ export function useVoiceSession(wsUrl: string) {
   const stop = useCallback(async () => {
     await micRef.current?.stop();
     micRef.current = null;
+    // Session.stop() flushes the utterance and waits for chunk_debug before closing WS.
     await sessionRef.current?.stop();
     sessionRef.current = null;
     setLiveInterim("");
