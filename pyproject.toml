@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vad-proxy"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "LLM-powered voice transcription proxy: local Silero VAD endpointing + pluggable cloud STT + DeepSeek smart-layer + pluggable output."
 readme = "README.md"
 license = { text = "MIT" }

@@ -24,6 +24,7 @@ from strawberry.exceptions import ConnectionRejectionError
 from strawberry.fastapi import GraphQLRouter
 from strawberry.http.typevars import Context
 
+from vad_proxy import __version__
 from vad_proxy.config import Settings, load_settings
 from vad_proxy.graphql.schema import schema
 from vad_proxy.graphql.session import SessionManager
@@ -88,7 +89,7 @@ class OriginGraphQLRouter(GraphQLRouter):
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     session_manager = SessionManager(settings)
-    app = FastAPI(title="vad-proxy", version="0.1.0")
+    app = FastAPI(title="vad-proxy", version=__version__)
 
     origins = _effective_origins(settings)
     app.add_middleware(

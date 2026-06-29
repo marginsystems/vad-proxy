@@ -1,7 +1,7 @@
 {
   "name": "vad-proxy-voice-lab",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0a1",
   "type": "module",
   "scripts": {
     "dev": "vite",

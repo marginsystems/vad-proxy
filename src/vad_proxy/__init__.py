@@ -16,4 +16,4 @@ for _var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
     _os.environ.setdefault(_var, "1")
 _os.environ.setdefault("OMP_DYNAMIC", "FALSE")
 
-__version__ = "0.1.0"
+__version__ = "0.1.0a1"
