@@ -9,7 +9,7 @@ from vad_proxy.graphql.session import SessionManager
 
 
 @pytest.mark.asyncio
-async def test_create_session_accepts_matching_sample_rate(model_available):
+async def test_create_session_accepts_matching_sample_rate():
     settings = load_settings(sample_rate=16000)
     manager = SessionManager(settings)
     session = manager.create_session(16000)
@@ -17,7 +17,7 @@ async def test_create_session_accepts_matching_sample_rate(model_available):
     await manager.stop_session(session.session_id)
 
 
-def test_create_session_rejects_mismatched_sample_rate(model_available):
+def test_create_session_rejects_mismatched_sample_rate():
     settings = load_settings(sample_rate=16000)
     manager = SessionManager(settings)
     with pytest.raises(ValueError, match="48000") as exc_info:
