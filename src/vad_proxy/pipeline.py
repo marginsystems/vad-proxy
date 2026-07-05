@@ -259,9 +259,12 @@ class VadProxyPipeline:
     ) -> None:
         async with self._interim_lock:
             self._interim_results[slice_index] = result
-            await self._flush_ordered_interims()
+            emissions = self._flush_ordered_interims()
+        for joined, start_secs, end_secs, backend in emissions:
+            await self.c.output.send_interim(joined, start_secs, end_secs, backend)
 
-    async def _flush_ordered_interims(self) -> None:
+    def _flush_ordered_interims(self) -> list[tuple[str, float, float, str]]:
+        emissions: list[tuple[str, float, float, str]] = []
         while self._interim_emit_upto in self._interim_results:
             result = self._interim_results.pop(self._interim_emit_upto)
             self._interim_emit_upto += 1
@@ -293,12 +296,8 @@ class VadProxyPipeline:
             else:
                 backend = self.c.stt.name
             joined = " ".join(self._turn_texts)
-            await self.c.output.send_interim(
-                joined,
-                interim_slice.start_secs,
-                interim_slice.end_secs,
-                backend,
-            )
+            emissions.append((joined, interim_slice.start_secs, interim_slice.end_secs, backend))
+        return emissions
 
     async def _handle_utterance(
         self, utterance: Utterance, joined_text: str, debug_chunks: list[InterimChunkRecord]
