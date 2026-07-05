@@ -29,6 +29,20 @@ class FailingSttBackend(SttBackend):
         raise SttUnavailable("STT down")
 
 
+class SizeAwareMockSttBackend(SttBackend):
+    """Returns slice text for small PCM (interim) and full text for utterance PCM."""
+
+    name = "size_mock"
+    FULL_UTTERANCE_MIN_BYTES = 20_000
+
+    async def transcribe(self, pcm: bytes, sample_rate: int) -> Transcript:
+        if len(pcm) >= self.FULL_UTTERANCE_MIN_BYTES:
+            text = "full utterance text"
+        else:
+            text = "slice-part"
+        return Transcript(text=text, language="en", confidence=1.0, backend=self.name)
+
+
 class CaptureOutput(OutputAdapter):
     name = "capture"
 
@@ -143,3 +157,34 @@ async def test_pipeline_skips_slice_on_stt_unavailable(model_available, test_aud
 
     assert capture.errors
     assert all(not fatal for _, fatal in capture.errors)
+
+
+@pytest.mark.asyncio
+async def test_pipeline_final_re_stt_uses_full_utterance(
+    model_available, test_audio_path
+):
+    """Final transcript must come from full-utterance STT, not joined slice text."""
+    from vad_proxy.audio.decode import decode_to_pcm16
+
+    settings = load_settings(
+        stt_backend="mock",
+        llm_enabled=False,
+        interim_enabled=True,
+        interim_secs=0.5,
+        interim_smart=False,
+    )
+    capture = CaptureOutput()
+    pipeline = _build(settings, capture, stt=SizeAwareMockSttBackend())
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    for i in range(0, len(pcm), 333):
+        await pipeline.feed(pcm[i : i + 333])
+    await pipeline.finish()
+    await pipeline.aclose()
+
+    assert capture.items, "expected a final transcript"
+    assert len(capture.interims) >= 1
+    assert all("slice-part" in t[0] for t in capture.interims)
+    final_text = capture.items[-1].text
+    assert "full utterance text" in final_text
+    assert "slice-part slice-part" not in final_text

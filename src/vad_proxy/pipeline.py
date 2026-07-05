@@ -158,16 +158,25 @@ class VadProxyPipeline:
         if self.settings.interim_enabled:
             self._reset_turn_if_new_utterance()
             await self._drain_and_emit_interims()
-            raw_text = " ".join(self._turn_texts)
-            stt_backend = self._turn_stt_backend or self.c.stt.name
-            turn_confidence = self._turn_stt_confidence
+            joined_text = " ".join(self._turn_texts)
             debug_chunks = list(self._turn_debug_chunks)
             self._turn_texts.clear()
             self._turn_stt_backend = ""
             self._turn_stt_confidence = None
             self._turn_debug_chunks.clear()
             self._turn_epoch = self._segmenter.utterance_epoch
-            raw_text = self.c.personalizer.bias_vocabulary(raw_text)
+            try:
+                transcript = await self.c.stt.transcribe(
+                    utterance.pcm, utterance.sample_rate
+                )
+                raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
+                stt_backend = transcript.backend
+                turn_confidence = transcript.confidence
+            except SttUnavailable as exc:
+                await self.c.output.send_error(str(exc), fatal=False)
+                raw_text = self.c.personalizer.bias_vocabulary(joined_text)
+                stt_backend = self.c.stt.name
+                turn_confidence = None
             if not raw_text.strip():
                 if self.settings.debug_interim_chunks and debug_chunks:
                     await self.c.output.send_chunk_debug(debug_chunks)
