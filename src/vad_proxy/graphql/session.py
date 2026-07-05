@@ -115,7 +115,7 @@ class QueueOutputAdapter(OutputAdapter):
     async def send_interim(
         self, text: str, start_secs: float, end_secs: float, stt_backend: str
     ) -> None:
-        self._put_best_effort(
+        if not self._put_best_effort(
             VoiceEventData(
                 kind="transcript",
                 interim=True,
@@ -124,7 +124,12 @@ class QueueOutputAdapter(OutputAdapter):
                 end_secs=end_secs,
                 stt_backend=stt_backend,
             )
-        )
+        ):
+            _log.warning(
+                "interim dropped: event queue full (%s/%s)",
+                self._queue.qsize(),
+                self._maxsize,
+            )
 
     async def send_chunk_debug(self, chunks: list[InterimChunkRecord]) -> None:
         if not chunks:
