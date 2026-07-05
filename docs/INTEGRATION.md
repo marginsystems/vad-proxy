@@ -91,6 +91,12 @@ type Subscription {
 - **`listen`**: creates a new session. The **first** event is always
   `kind: "session_started"` with a `sessionId`. Subsequent events are
   `kind: "transcript"` with the refined text.
+- **`sampleRate`**: must match the server's `sample_rate` from `/health`
+  (default **16000**). Resample mic audio to that rate before calling
+  `appendAudio`. Silero supports 8000 and 16000 Hz, but the server runs at
+  whatever `VAD_PROXY_SAMPLE_RATE` is configured. A mismatched `sampleRate`
+  fails the subscription immediately with a GraphQL error — no session is
+  created.
 - **`interim`**: when `VAD_PROXY_INTERIM_ENABLED=true`, the server may emit
   additional `transcript` events with `interim: true` while the user is still
   speaking. These carry **raw STT text** (joined chunk transcripts so far) and

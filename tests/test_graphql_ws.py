@@ -37,6 +37,15 @@ subscription Listen {
 }
 """
 
+LISTEN_48K_QUERY = """
+subscription Listen {
+  listen(sampleRate: 48000) {
+    kind
+    sessionId
+  }
+}
+"""
+
 APPEND_MUTATION = """
 mutation Append($sessionId: ID!, $audio: String!) {
   appendAudio(sessionId: $sessionId, audioBase64: $audio)
@@ -204,6 +213,91 @@ async def _expect_origin_rejected(ws_url: str, origin: str) -> None:
     except websockets.exceptions.ConnectionClosed as exc:
         code = exc.rcvd.code if exc.rcvd is not None else exc.code
         assert code == 4403
+
+
+async def _expect_sample_rate_rejected(ws_url: str) -> None:
+    async with websockets.connect(
+        ws_url,
+        subprotocols=["graphql-transport-ws"],
+        open_timeout=10,
+        additional_headers={"Origin": "http://127.0.0.1:18080"},
+    ) as ws:
+        await ws.send(json.dumps({"type": "connection_init", "payload": {}}))
+        while True:
+            raw = await asyncio.wait_for(ws.recv(), timeout=10)
+            msg = json.loads(raw)
+            if msg.get("type") == "connection_ack":
+                break
+            if msg.get("type") == "connection_error":
+                raise RuntimeError(msg)
+
+        sub_id = "sub-bad-rate"
+        await ws.send(
+            json.dumps(
+                {
+                    "id": sub_id,
+                    "type": "subscribe",
+                    "payload": {"query": LISTEN_48K_QUERY},
+                }
+            )
+        )
+
+        saw_session_started = False
+        while True:
+            raw = await asyncio.wait_for(ws.recv(), timeout=10)
+            msg = json.loads(raw)
+            mtype = msg.get("type")
+            mid = msg.get("id")
+
+            if mtype == "next" and mid == sub_id:
+                payload = msg.get("payload") or {}
+                data = (payload.get("data") or {}).get("listen")
+                if data and data.get("kind") == "session_started":
+                    saw_session_started = True
+                if payload.get("errors"):
+                    assert not saw_session_started, "session_started before error"
+                    return
+
+            if mtype == "error" and mid == sub_id:
+                assert not saw_session_started, "session_started before error"
+                return
+
+            if mtype == "complete" and mid == sub_id:
+                assert not saw_session_started, "session_started before complete"
+                return
+
+
+@pytest.mark.skipif(not MODEL_PATH.exists(), reason="Silero model not downloaded")
+def test_graphql_ws_rejects_unsupported_sample_rate():
+    port = 18086
+    env = {
+        **os.environ,
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "VAD_PROXY_PORT": str(port),
+        "VAD_PROXY_STT_BACKEND": "mock",
+        "VAD_PROXY_LLM_ENABLED": "false",
+        "VAD_PROXY_INTERIM_ENABLED": "false",
+    }
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "vad_proxy.server"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        _wait_for_health(port)
+        ws_url = f"ws://127.0.0.1:{port}/graphql"
+        asyncio.run(_expect_sample_rate_rejected(ws_url))
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 @pytest.mark.skipif(not TEST_AUDIO.exists(), reason="bundled test audio missing")
