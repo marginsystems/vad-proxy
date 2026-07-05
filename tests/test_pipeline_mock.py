@@ -16,8 +16,17 @@ from vad_proxy.llm.base import PassthroughSmartLayer
 from vad_proxy.output.base import FinalText, OutputAdapter
 from vad_proxy.pipeline import PipelineComponents, VadProxyPipeline
 from vad_proxy.personalization.base import NullPersonalizer
+from vad_proxy.stt.base import SttBackend, Transcript
 from vad_proxy.stt.mock import MockSttBackend
+from vad_proxy.stt.retry import SttUnavailable
 from vad_proxy.audio.vad import SileroVad
+
+
+class FailingSttBackend(SttBackend):
+    name = "failing"
+
+    async def transcribe(self, pcm: bytes, sample_rate: int) -> Transcript:
+        raise SttUnavailable("STT down")
 
 
 class CaptureOutput(OutputAdapter):
@@ -27,6 +36,7 @@ class CaptureOutput(OutputAdapter):
         self.items: list[FinalText] = []
         self.interims: list[tuple[str, float, float, str]] = []
         self.chunk_debug: list = []
+        self.errors: list[tuple[str, bool]] = []
 
     async def send(self, final: FinalText) -> None:
         self.items.append(final)
@@ -39,11 +49,14 @@ class CaptureOutput(OutputAdapter):
     async def send_chunk_debug(self, chunks) -> None:
         self.chunk_debug.append(chunks)
 
+    async def send_error(self, message: str, fatal: bool = False) -> None:
+        self.errors.append((message, fatal))
 
-def _build(settings, capture) -> VadProxyPipeline:
+
+def _build(settings, capture, stt: SttBackend | None = None) -> VadProxyPipeline:
     components = PipelineComponents(
         vad=SileroVad(sample_rate=settings.sample_rate),
-        stt=MockSttBackend(),
+        stt=stt or MockSttBackend(),
         smart=PassthroughSmartLayer(),
         output=capture,
         personalizer=NullPersonalizer(),
@@ -105,3 +118,28 @@ async def test_pipeline_interim_emits_before_final(model_available, test_audio_p
     if capture.items:
         assert len(capture.interims) >= 1
         assert capture.interims[-1][0]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_skips_slice_on_stt_unavailable(model_available, test_audio_path):
+    """SttUnavailable on interim STT must not crash; emit non-fatal error instead."""
+    from vad_proxy.audio.decode import decode_to_pcm16
+
+    settings = load_settings(
+        stt_backend="mock",
+        llm_enabled=False,
+        interim_enabled=True,
+        interim_secs=0.5,
+        interim_smart=False,
+    )
+    capture = CaptureOutput()
+    pipeline = _build(settings, capture, stt=FailingSttBackend())
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    for i in range(0, len(pcm), 333):
+        await pipeline.feed(pcm[i : i + 333])
+    await pipeline.finish()
+    await pipeline.aclose()
+
+    assert capture.errors
+    assert all(not fatal for _, fatal in capture.errors)

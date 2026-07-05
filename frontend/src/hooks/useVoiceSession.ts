@@ -73,6 +73,16 @@ export function useVoiceSession(wsUrl: string) {
           ]);
           return;
         }
+        if (ev.kind === "error") {
+          if (ev.fatal) {
+            setLiveInterim("");
+            setError(ev.message ?? "Session error");
+            setStatus("error");
+          } else {
+            setError(ev.message ?? "STT slice dropped");
+          }
+          return;
+        }
         if (ev.kind === "transcript" && ev.interim) {
           setLiveInterim(ev.text ?? "");
           return;

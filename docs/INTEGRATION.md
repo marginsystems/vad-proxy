@@ -47,7 +47,7 @@ No `connectionParams` or shared secret is required.
 
 ```graphql
 type VoiceEvent {
-  kind: String!             # "session_started" | "transcript"
+  kind: String!             # "session_started" | "transcript" | "chunk_debug" | "error"
   sessionId: ID
   text: String
   turnComplete: Boolean
@@ -56,6 +56,8 @@ type VoiceEvent {
   endSecs: Float
   sttBackend: String
   interim: Boolean          # true for live raw STT while speaking (no LLM)
+  message: String           # error detail when kind is "error"
+  fatal: Boolean            # true when the session is ending due to the error
 }
 
 type Mutation {
@@ -94,6 +96,10 @@ type Subscription {
   turn the server emits a `chunk_debug` event with per-slice WAV audio, STT text,
   timestamps, and cut reason (`dip` / `max` / `tail`). Voice Lab shows replay
   controls for each slice.
+- **`error`**: pipeline or session failures. `message` describes what happened.
+  `fatal: false` means a single STT slice was skipped (session continues).
+  `fatal: true` means the session consumer crashed and the subscription will
+  end — reconnect the client.
 
 ## Client flow
 

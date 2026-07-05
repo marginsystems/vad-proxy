@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from vad_proxy.config import Settings
 from vad_proxy.stt.base import SttBackend
+from vad_proxy.stt.retry import RetryingSttBackend
+
+
+def _wrap_cloud(backend: SttBackend, settings: Settings) -> SttBackend:
+    return RetryingSttBackend(
+        backend,
+        max_retries=settings.stt_max_retries,
+        base_delay=settings.stt_retry_base_delay,
+    )
 
 
 def build_stt(settings: Settings) -> SttBackend:
@@ -15,17 +24,23 @@ def build_stt(settings: Settings) -> SttBackend:
     if backend == "deepgram":
         from vad_proxy.stt.deepgram import DeepgramSttBackend
 
-        return DeepgramSttBackend(
-            api_key=settings.deepgram_api_key,
-            model=settings.deepgram_model,
-            language=settings.language,
+        return _wrap_cloud(
+            DeepgramSttBackend(
+                api_key=settings.deepgram_api_key,
+                model=settings.deepgram_model,
+                language=settings.language,
+            ),
+            settings,
         )
     if backend == "openai":
         from vad_proxy.stt.openai import OpenAISttBackend
 
-        return OpenAISttBackend(
-            api_key=settings.openai_api_key,
-            model=settings.openai_stt_model,
-            language=settings.language,
+        return _wrap_cloud(
+            OpenAISttBackend(
+                api_key=settings.openai_api_key,
+                model=settings.openai_stt_model,
+                language=settings.language,
+            ),
+            settings,
         )
     raise ValueError(f"Unknown STT backend: {backend}")

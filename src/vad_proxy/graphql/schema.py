@@ -32,6 +32,8 @@ def _to_voice_event(data: VoiceEventData) -> "VoiceEvent":
         end_secs=data.end_secs,
         stt_backend=data.stt_backend,
         interim=data.interim,
+        message=data.message,
+        fatal=data.fatal,
         chunks=[
             InterimChunk(
                 index=c.index,
@@ -57,6 +59,8 @@ class VoiceEvent:
     end_secs: float | None = None
     stt_backend: str | None = None
     interim: bool = False
+    message: str | None = None
+    fatal: bool = False
     chunks: list[InterimChunk] | None = None
 
 

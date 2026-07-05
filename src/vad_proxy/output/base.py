@@ -51,5 +51,8 @@ class OutputAdapter(ABC):
     async def send_chunk_debug(self, chunks: list[InterimChunkRecord]) -> None:
         """Deliver interim slice audio + metadata for debug replay (optional hook)."""
 
+    async def send_error(self, message: str, fatal: bool = False) -> None:
+        """Deliver a pipeline or session error to the client (optional hook)."""
+
     async def aclose(self) -> None:
         """Release any held resources."""

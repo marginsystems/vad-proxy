@@ -25,7 +25,7 @@ from vad_proxy.pipeline import VadProxyPipeline, build_pipeline
 
 _log = logging.getLogger(__name__)
 
-EventKind = Literal["session_started", "transcript", "chunk_debug"]
+EventKind = Literal["session_started", "transcript", "chunk_debug", "error"]
 
 _INPUT_QUEUE_MAX = 128
 
@@ -53,6 +53,8 @@ class VoiceEventData:
     end_secs: float | None = None
     stt_backend: str | None = None
     interim: bool = False
+    message: str | None = None
+    fatal: bool = False
     chunks: list[InterimChunkEvent] = field(default_factory=list)
 
 
@@ -115,6 +117,11 @@ class QueueOutputAdapter(OutputAdapter):
             )
         )
 
+    async def send_error(self, message: str, fatal: bool = False) -> None:
+        await self._queue.put(
+            VoiceEventData(kind="error", message=message, fatal=fatal)
+        )
+
 
 class _EndUtterance:
     """Sentinel placed on the input queue to flush trailing audio."""
@@ -122,7 +129,13 @@ class _EndUtterance:
 
 _END_UTTERANCE = _EndUtterance()
 _STOP = object()
-_EVENT_STOP = object()
+
+
+class _EventStop(VoiceEventData):
+    pass
+
+
+_EVENT_STOP = _EventStop(kind="session_started")
 
 
 def _build_session_pipeline(
@@ -141,7 +154,7 @@ class Session:
         self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = (
             asyncio.Queue(maxsize=_INPUT_QUEUE_MAX)
         )
-        self._event_queue: asyncio.Queue[VoiceEventData | object] = asyncio.Queue()
+        self._event_queue: asyncio.Queue[VoiceEventData] = asyncio.Queue()
         self._pipeline = _build_session_pipeline(settings, self._event_queue)
         self._stopped = False
         self._consumer = asyncio.create_task(
@@ -161,15 +174,22 @@ class Session:
             await self._pipeline.finish()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             _log.exception("session %s consumer failed", self.session_id)
+            await self._event_queue.put(
+                VoiceEventData(
+                    kind="error",
+                    message=str(exc),
+                    fatal=True,
+                )
+            )
             raise
         finally:
             try:
                 await self._pipeline.aclose()
             except Exception:
                 pass
-            self._event_queue.put_nowait(_EVENT_STOP)
+            await self._event_queue.put(_EVENT_STOP)
 
     def _enqueue(self, item: bytes | _EndUtterance) -> None:
         if self._stopped:

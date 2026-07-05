@@ -1,4 +1,4 @@
-export type VoiceEventKind = "session_started" | "transcript" | "chunk_debug";
+export type VoiceEventKind = "session_started" | "transcript" | "chunk_debug" | "error";
 
 export type InterimChunk = {
   index: number;
@@ -25,6 +25,8 @@ export type VoiceEvent = {
   endSecs?: number | null;
   sttBackend?: string | null;
   interim?: boolean | null;
+  message?: string | null;
+  fatal?: boolean | null;
   chunks?: InterimChunk[] | null;
 };
 
