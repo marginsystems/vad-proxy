@@ -120,7 +120,7 @@ class VadProxyPipeline:
             self._turn_stt_confidence = None
             self._turn_debug_chunks.clear()
             self._turn_epoch = self._segmenter.utterance_epoch
-            self._reset_interim_slice_state()
+            await self._reset_interim_slice_state()
         else:
             joined_text = ""
             debug_chunks: list[InterimChunkRecord] = []
@@ -138,17 +138,16 @@ class VadProxyPipeline:
     async def _await_pending_interims(self) -> None:
         while self._interim_tasks or self._pending_interim_slices:
             await self._pump_interim_queue()
-            if not self._interim_tasks:
-                continue
             await asyncio.gather(*self._interim_tasks, return_exceptions=True)
 
-    def _reset_interim_slice_state(self) -> None:
-        self._next_slice_index = 0
-        self._interim_results.clear()
-        self._interim_emit_upto = 0
-        self._pending_interim_slices.clear()
+    async def _reset_interim_slice_state(self) -> None:
+        async with self._interim_lock:
+            self._next_slice_index = 0
+            self._interim_results.clear()
+            self._interim_emit_upto = 0
+            self._pending_interim_slices.clear()
 
-    def _reset_turn_if_new_utterance(self) -> None:
+    async def _reset_turn_if_new_utterance(self) -> None:
         epoch = self._segmenter.utterance_epoch
         if epoch != self._turn_epoch:
             self._turn_texts.clear()
@@ -156,7 +155,7 @@ class VadProxyPipeline:
             self._turn_stt_confidence = None
             self._turn_debug_chunks.clear()
             self._turn_epoch = epoch
-            self._reset_interim_slice_state()
+            await self._reset_interim_slice_state()
 
     async def feed(self, pcm: bytes) -> None:
         """Push arbitrary-length PCM; processes any complete VAD chunks."""
@@ -178,14 +177,14 @@ class VadProxyPipeline:
         tail = self._segmenter.flush()
         if tail is not None:
             if self.settings.interim_enabled:
-                self._reset_turn_if_new_utterance()
+                await self._reset_turn_if_new_utterance()
                 await self._drain_and_schedule_interims()
             await self._schedule_utterance(tail)
         await self._await_pending_interims()
         await self._await_pending_utterances()
 
     async def _drain_and_schedule_interims(self) -> None:
-        self._reset_turn_if_new_utterance()
+        await self._reset_turn_if_new_utterance()
         while True:
             interim_slice = self._segmenter.drain_interim()
             if interim_slice is None:
