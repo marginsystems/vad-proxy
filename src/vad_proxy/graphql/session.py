@@ -246,10 +246,9 @@ class SessionManager:
 
     def create_session(self, sample_rate: int | None = None) -> Session:
         if sample_rate is not None and sample_rate != self.settings.sample_rate:
-            _log.warning(
-                "listen(sample_rate=%s) ignored; server runs at %s",
-                sample_rate,
-                self.settings.sample_rate,
+            raise ValueError(
+                f"unsupported sampleRate: {sample_rate} "
+                f"(server requires {self.settings.sample_rate})"
             )
         session_id = str(uuid.uuid4())
         session = Session(session_id, self.settings)
