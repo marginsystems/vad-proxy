@@ -162,13 +162,18 @@ class QueueOutputAdapter(OutputAdapter):
                 self._queue.qsize(),
                 self._maxsize,
             )
-            self._put_best_effort(
+            if not self._put_best_effort(
                 VoiceEventData(
                     kind="error",
                     message="chunk_debug skipped: event queue full",
                     fatal=False,
                 )
-            )
+            ):
+                _log.warning(
+                    "chunk_debug error event dropped: queue full (%s/%s)",
+                    self._queue.qsize(),
+                    self._maxsize,
+                )
 
     async def send_error(self, message: str, fatal: bool = False) -> None:
         await self._put_required(
