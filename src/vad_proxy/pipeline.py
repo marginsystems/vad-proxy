@@ -228,16 +228,28 @@ class VadProxyPipeline:
                     ),
                 )
                 return
-            text = transcript.text.strip()
-            await self._store_interim_result(
-                pending.slice_index,
-                _InterimSliceResult(
-                    epoch=pending.epoch,
-                    slice=pending.slice,
-                    text=text,
-                    transcript=transcript,
-                ),
-            )
+            try:
+                text = transcript.text.strip()
+                await self._store_interim_result(
+                    pending.slice_index,
+                    _InterimSliceResult(
+                        epoch=pending.epoch,
+                        slice=pending.slice,
+                        text=text,
+                        transcript=transcript,
+                    ),
+                )
+            except Exception:
+                _log.exception("Unexpected error processing interim slice %s", pending.slice_index)
+                await self._store_interim_result(
+                    pending.slice_index,
+                    _InterimSliceResult(
+                        epoch=pending.epoch,
+                        slice=pending.slice,
+                        text="",
+                        transcript=None,
+                    ),
+                )
         finally:
             await self._pump_interim_queue()
 
