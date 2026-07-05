@@ -83,7 +83,14 @@ class QueueOutputAdapter(OutputAdapter):
         self._maxsize = maxsize
 
     async def _put_required(self, event: VoiceEventData) -> None:
-        await self._queue.put(event)
+        try:
+            self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            _log.warning(
+                "event dropped: queue full (%s/%s)",
+                self._queue.qsize(),
+                self._maxsize,
+            )
 
     def _put_best_effort(self, event: VoiceEventData) -> bool:
         try:
@@ -129,13 +136,18 @@ class QueueOutputAdapter(OutputAdapter):
                 self._queue.qsize(),
                 self._maxsize,
             )
-            self._put_best_effort(
+            if not self._put_best_effort(
                 VoiceEventData(
                     kind="error",
                     message="chunk_debug skipped: event queue under pressure",
                     fatal=False,
                 )
-            )
+            ):
+                _log.warning(
+                    "error under-pressure event dropped: queue full (%s/%s)",
+                    self._queue.qsize(),
+                    self._maxsize,
+                )
             return
         if not self._put_best_effort(
             VoiceEventData(
@@ -222,20 +234,32 @@ class Session:
             raise
         except Exception as exc:
             _log.exception("session %s consumer failed", self.session_id)
-            await self._event_queue.put(
-                VoiceEventData(
-                    kind="error",
-                    message=str(exc),
-                    fatal=True,
+            try:
+                self._event_queue.put_nowait(
+                    VoiceEventData(
+                        kind="error",
+                        message=str(exc),
+                        fatal=True,
+                    )
                 )
-            )
+            except asyncio.QueueFull:
+                _log.warning(
+                    "session %s error event dropped: queue full",
+                    self.session_id,
+                )
             raise
         finally:
             try:
                 await self._pipeline.aclose()
             except Exception:
                 pass
-            await self._event_queue.put(_EVENT_STOP)
+            try:
+                self._event_queue.put_nowait(_EVENT_STOP)
+            except asyncio.QueueFull:
+                _log.warning(
+                    "session %s STOP event dropped: queue full",
+                    self.session_id,
+                )
 
     def _enqueue(self, item: bytes | _EndUtterance) -> None:
         if self._stopped:
