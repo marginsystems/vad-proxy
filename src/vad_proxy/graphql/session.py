@@ -153,7 +153,7 @@ class QueueOutputAdapter(OutputAdapter):
             self._put_best_effort(
                 VoiceEventData(
                     kind="error",
-                    message="chunk_debug skipped: event queue under pressure",
+                    message="chunk_debug skipped: event queue full",
                     fatal=False,
                 )
             )
