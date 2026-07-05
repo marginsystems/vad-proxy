@@ -175,10 +175,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
+        await websocket.accept()
         if not _ws_api_key_ok(settings, websocket):
             await websocket.close(code=4403)
             return
-        await websocket.accept()
         pipeline = build_pipeline(settings)
         try:
             while True:
