@@ -262,9 +262,17 @@ class Session:
                 self._event_queue.put_nowait(_EVENT_STOP)
             except asyncio.QueueFull:
                 _log.warning(
-                    "session %s STOP event dropped: queue full",
+                    "session %s queue full; draining one event to deliver STOP",
                     self.session_id,
                 )
+                try:
+                    self._event_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    self._event_queue.put_nowait(_EVENT_STOP)
+                except asyncio.QueueFull:
+                    pass
 
     def _enqueue(self, item: bytes | _EndUtterance) -> None:
         if self._stopped:
