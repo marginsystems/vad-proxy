@@ -25,7 +25,7 @@ from vad_proxy.pipeline import VadProxyPipeline, build_pipeline
 
 _log = logging.getLogger(__name__)
 
-EventKind = Literal["session_started", "transcript", "chunk_debug"]
+EventKind = Literal["session_started", "transcript", "chunk_debug", "error"]
 
 _INPUT_QUEUE_MAX = 128
 
@@ -53,6 +53,8 @@ class VoiceEventData:
     end_secs: float | None = None
     stt_backend: str | None = None
     interim: bool = False
+    message: str | None = None
+    fatal: bool = False
     chunks: list[InterimChunkEvent] = field(default_factory=list)
 
 
@@ -115,6 +117,11 @@ class QueueOutputAdapter(OutputAdapter):
             )
         )
 
+    async def send_error(self, message: str, fatal: bool = False) -> None:
+        await self._queue.put(
+            VoiceEventData(kind="error", message=message, fatal=fatal)
+        )
+
 
 class _EndUtterance:
     """Sentinel placed on the input queue to flush trailing audio."""
@@ -161,8 +168,15 @@ class Session:
             await self._pipeline.finish()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             _log.exception("session %s consumer failed", self.session_id)
+            self._event_queue.put_nowait(
+                VoiceEventData(
+                    kind="error",
+                    message=str(exc),
+                    fatal=True,
+                )
+            )
             raise
         finally:
             try:

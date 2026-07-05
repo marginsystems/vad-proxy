@@ -26,6 +26,7 @@ from vad_proxy.personalization.base import Personalizer
 from vad_proxy.personalization.factory import build_personalizer
 from vad_proxy.stt.base import SttBackend
 from vad_proxy.stt.factory import build_stt
+from vad_proxy.stt.retry import SttUnavailable
 
 _transcript_log = logging.getLogger("vad_proxy.transcript")
 
@@ -118,9 +119,13 @@ class VadProxyPipeline:
             interim_slice = self._segmenter.drain_interim()
             if interim_slice is None:
                 break
-            transcript = await self.c.stt.transcribe(
-                interim_slice.pcm, self.settings.sample_rate
-            )
+            try:
+                transcript = await self.c.stt.transcribe(
+                    interim_slice.pcm, self.settings.sample_rate
+                )
+            except SttUnavailable as exc:
+                await self.c.output.send_error(str(exc), fatal=False)
+                continue
             text = transcript.text.strip()
             if self.settings.debug_interim_chunks:
                 self._turn_debug_chunks.append(
@@ -168,9 +173,13 @@ class VadProxyPipeline:
                     await self.c.output.send_chunk_debug(debug_chunks)
                 return
         else:
-            transcript = await self.c.stt.transcribe(
-                utterance.pcm, utterance.sample_rate
-            )
+            try:
+                transcript = await self.c.stt.transcribe(
+                    utterance.pcm, utterance.sample_rate
+                )
+            except SttUnavailable as exc:
+                await self.c.output.send_error(str(exc), fatal=False)
+                return
             raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
             stt_backend = transcript.backend
             debug_chunks = []

@@ -5,7 +5,7 @@ import type { VoiceEvent } from "./types";
 
 const LISTEN_SUB = `subscription Listen {
   listen(sampleRate: 16000) {
-    kind sessionId text turnComplete endPhrase startSecs endSecs sttBackend interim
+    kind sessionId text turnComplete endPhrase startSecs endSecs sttBackend interim message fatal
     chunks { index startSecs endSecs reason text audioBase64 }
   }
 }`;
@@ -72,6 +72,9 @@ export class VoiceGraphqlSession {
 
   private deliverEvent(ev: VoiceEvent): void {
     this.callbacks.onEvent(ev);
+    if (ev.kind === "error" && ev.message && ev.fatal) {
+      this.callbacks.onError(ev.message);
+    }
     if (
       ev.kind === "chunk_debug" ||
       (ev.kind === "transcript" && !ev.interim)

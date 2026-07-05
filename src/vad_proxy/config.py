@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     openai_stt_model: str = "whisper-1"
     language: str = "en"
+    stt_max_retries: int = 2
+    stt_retry_base_delay: float = 0.2
 
     # --- LLM smart-layer ----------------------------------------------
     llm_enabled: bool = True
