@@ -253,19 +253,7 @@ class Session:
             raise
         except Exception as exc:
             _log.exception("session %s consumer failed", self.session_id)
-            try:
-                self._event_queue.put_nowait(
-                    VoiceEventData(
-                        kind="error",
-                        message=str(exc),
-                        fatal=True,
-                    )
-                )
-            except asyncio.QueueFull:
-                _log.warning(
-                    "session %s error event dropped: queue full",
-                    self.session_id,
-                )
+            await self._pipeline.output.send_error(str(exc), fatal=True)
             raise
         finally:
             try:
