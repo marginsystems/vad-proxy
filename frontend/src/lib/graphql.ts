@@ -73,7 +73,7 @@ export class VoiceGraphqlSession {
   private deliverEvent(ev: VoiceEvent): void {
     this.callbacks.onEvent(ev);
     if (ev.kind === "error" && ev.fatal) {
-      this.callbacks.onError(ev.message);
+      this.callbacks.onError(ev.message ?? "Session error");
     }
     if (
       ev.kind === "chunk_debug" ||
