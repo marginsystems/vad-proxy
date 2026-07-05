@@ -256,7 +256,7 @@ class Session:
         finally:
             try:
                 await self._pipeline.aclose()
-            except Exception:
+            except BaseException:
                 pass
             try:
                 self._event_queue.put_nowait(_EVENT_STOP)
