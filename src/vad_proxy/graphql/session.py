@@ -87,10 +87,19 @@ class QueueOutputAdapter(OutputAdapter):
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
             _log.warning(
-                "event dropped: queue full (%s/%s)",
+                "required event (%s) queue full (%s/%s); draining one item to deliver",
+                event.kind,
                 self._queue.qsize(),
                 self._maxsize,
             )
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                self._queue.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
 
     def _put_best_effort(self, event: VoiceEventData) -> bool:
         try:

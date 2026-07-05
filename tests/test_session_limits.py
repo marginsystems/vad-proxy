@@ -48,7 +48,7 @@ async def test_chunk_debug_skipped_when_queue_full():
 
 
 @pytest.mark.asyncio
-async def test_final_transcript_dropped_on_full_queue_nonblocking():
+async def test_final_transcript_drains_one_on_full_queue():
     queue: asyncio.Queue[VoiceEventData] = asyncio.Queue(maxsize=2)
     adapter = QueueOutputAdapter(queue, maxsize=2)
     await queue.put(VoiceEventData(kind="transcript", interim=True, text="live"))
@@ -73,4 +73,6 @@ async def test_final_transcript_dropped_on_full_queue_nonblocking():
     texts = []
     while not queue.empty():
         texts.append(queue.get_nowait().text)
-    assert "final transcript" not in texts
+    assert "final transcript" in texts
+    assert "live" in texts or "live2" in texts
+    assert len(texts) == 2
