@@ -207,6 +207,172 @@ class SlowSmartLayer(SmartLayer):
         )
 
 
+class SlowSttBackend(SttBackend):
+    """Wraps another STT backend with an artificial transcribe delay."""
+
+    name = "slow"
+
+    def __init__(
+        self,
+        delay_secs: float = 0.5,
+        inner: SttBackend | None = None,
+        *,
+        delay_by_pcm_len: bool = False,
+    ) -> None:
+        self.delay_secs = delay_secs
+        self._inner = inner or MockSttBackend()
+        self._delay_by_pcm_len = delay_by_pcm_len
+        self.name = f"slow-{self._inner.name}"
+
+    async def transcribe(self, pcm: bytes, sample_rate: int) -> Transcript:
+        delay = self.delay_secs
+        if self._delay_by_pcm_len:
+            delay = self.delay_secs * (1 + (len(pcm) % 3))
+        await asyncio.sleep(delay)
+        return await self._inner.transcribe(pcm, sample_rate)
+
+
+class IndexedMockSttBackend(SttBackend):
+    """Returns slice-N text for interim-sized PCM so ordering can be verified."""
+
+    name = "indexed"
+    FULL_UTTERANCE_MIN_BYTES = 20_000
+
+    def __init__(self) -> None:
+        self._slice_counter = 0
+
+    async def transcribe(self, pcm: bytes, sample_rate: int) -> Transcript:
+        if len(pcm) >= self.FULL_UTTERANCE_MIN_BYTES:
+            text = "full utterance text"
+        else:
+            self._slice_counter += 1
+            text = f"slice-{self._slice_counter}"
+        return Transcript(text=text, language="en", confidence=1.0, backend=self.name)
+
+
+@pytest.mark.asyncio
+async def test_feed_continues_while_interim_stt(
+    model_available, test_audio_path
+):
+    """feed() must not block on slow interim slice STT."""
+    from vad_proxy.audio.decode import decode_to_pcm16
+
+    settings = load_settings(
+        stt_backend="mock",
+        llm_enabled=False,
+        interim_enabled=True,
+        interim_secs=0.5,
+        interim_smart=False,
+    )
+    capture = CaptureOutput()
+    pipeline = _build(
+        settings,
+        capture,
+        stt=SlowSttBackend(delay_secs=0.4, inner=MockSttBackend()),
+    )
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    for i in range(0, len(pcm), 333):
+        await pipeline.feed(pcm[i : i + 333])
+
+    start = time.monotonic()
+    for _ in range(10):
+        await pipeline.feed(b"\x00\x00" * 333)
+    elapsed = time.monotonic() - start
+    assert elapsed < 0.5, f"feed blocked {elapsed:.2f}s during interim STT"
+
+    await pipeline.finish()
+    await pipeline.aclose()
+
+
+@pytest.mark.asyncio
+async def test_interim_events_emitted_in_order(
+    model_available, test_audio_path
+):
+    """Interim joined text must grow monotonically even if STT completes out of order."""
+    from vad_proxy.audio.decode import decode_to_pcm16
+
+    settings = load_settings(
+        stt_backend="mock",
+        llm_enabled=False,
+        interim_enabled=True,
+        interim_secs=0.5,
+        interim_smart=False,
+    )
+    capture = CaptureOutput()
+    pipeline = _build(
+        settings,
+        capture,
+        stt=SlowSttBackend(
+            delay_secs=0.05,
+            inner=IndexedMockSttBackend(),
+            delay_by_pcm_len=True,
+        ),
+    )
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    for i in range(0, len(pcm), 333):
+        await pipeline.feed(pcm[i : i + 333])
+    await pipeline.finish()
+    await pipeline.aclose()
+
+    if not capture.interims:
+        pytest.skip("no interim events on this host")
+
+    seen_slices: list[str] = []
+    for joined, *_ in capture.interims:
+        parts = joined.split()
+        assert len(parts) >= len(seen_slices)
+        for i, part in enumerate(parts):
+            if i < len(seen_slices):
+                assert part == seen_slices[i]
+            else:
+                seen_slices.append(part)
+
+
+@pytest.mark.asyncio
+async def test_turn_end_waits_for_pending_interims(
+    model_available, test_audio_path
+):
+    """Final fallback text includes the last in-flight interim slice."""
+    from vad_proxy.audio.decode import decode_to_pcm16
+
+    settings = load_settings(
+        stt_backend="mock",
+        llm_enabled=False,
+        interim_enabled=True,
+        interim_secs=0.5,
+        interim_smart=False,
+    )
+    capture = CaptureOutput()
+    indexed = IndexedMockSttBackend()
+    slow_indexed = SlowSttBackend(delay_secs=0.3, inner=indexed)
+    full_min = SizeAwareMockSttBackend.FULL_UTTERANCE_MIN_BYTES
+
+    class FailFullUtteranceStt(SttBackend):
+        name = "fail_full"
+
+        async def transcribe(self, pcm: bytes, sample_rate: int) -> Transcript:
+            if len(pcm) >= full_min:
+                raise SttUnavailable("full STT down")
+            return await slow_indexed.transcribe(pcm, sample_rate)
+
+    pipeline = _build(settings, capture, stt=FailFullUtteranceStt())
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    for i in range(0, len(pcm), 333):
+        await pipeline.feed(pcm[i : i + 333])
+    await pipeline.finish()
+    await pipeline.aclose()
+
+    if not capture.items:
+        pytest.skip("no final transcript on this host")
+
+    assert capture.errors
+    final_text = capture.items[-1].text
+    assert "slice-" in final_text
+
+
 @pytest.mark.asyncio
 async def test_feed_continues_while_utterance_processing(
     model_available, test_audio_path

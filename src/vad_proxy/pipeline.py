@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from dataclasses import dataclass
 
-from vad_proxy.audio.segmenter import Segmenter, SegmenterParams, Utterance
+from vad_proxy.audio.segmenter import InterimSlice, Segmenter, SegmenterParams, Utterance
 from vad_proxy.audio.vad import SileroVad
 from vad_proxy.config import Settings
 from vad_proxy.llm.base import SmartLayer
@@ -24,12 +25,14 @@ from vad_proxy.output.base import FinalText, InterimChunkRecord, OutputAdapter
 from vad_proxy.output.factory import build_output
 from vad_proxy.personalization.base import Personalizer
 from vad_proxy.personalization.factory import build_personalizer
-from vad_proxy.stt.base import SttBackend
+from vad_proxy.stt.base import SttBackend, Transcript
 from vad_proxy.stt.factory import build_stt
 from vad_proxy.stt.retry import SttUnavailable
 
 _log = logging.getLogger(__name__)
 _transcript_log = logging.getLogger("vad_proxy.transcript")
+
+_INTERIM_STT_MAX_IN_FLIGHT = 2
 
 
 @dataclass
@@ -39,6 +42,21 @@ class PipelineComponents:
     smart: SmartLayer
     output: OutputAdapter
     personalizer: Personalizer
+
+
+@dataclass
+class _PendingInterimSlice:
+    slice: InterimSlice
+    slice_index: int
+    epoch: int
+
+
+@dataclass
+class _InterimSliceResult:
+    epoch: int
+    slice: InterimSlice
+    text: str
+    transcript: Transcript | None
 
 
 def build_pipeline(
@@ -84,9 +102,17 @@ class VadProxyPipeline:
         self._turn_epoch = 0
         self._turn_debug_chunks: list[InterimChunkRecord] = []
         self._utterance_tasks: set[asyncio.Task] = set()
+        self._interim_tasks: set[asyncio.Task] = set()
+        self._pending_interim_slices: deque[_PendingInterimSlice] = deque()
+        self._interim_results: dict[int, _InterimSliceResult] = {}
+        self._interim_emit_upto = 0
+        self._next_slice_index = 0
+        self._interim_lock = asyncio.Lock()
 
-    def _schedule_utterance(self, utterance: Utterance) -> None:
+    async def _schedule_utterance(self, utterance: Utterance) -> None:
         if self.settings.interim_enabled:
+            await self._drain_and_schedule_interims()
+            await self._await_pending_interims()
             joined_text = " ".join(self._turn_texts)
             debug_chunks = list(self._turn_debug_chunks)
             self._turn_texts.clear()
@@ -94,6 +120,7 @@ class VadProxyPipeline:
             self._turn_stt_confidence = None
             self._turn_debug_chunks.clear()
             self._turn_epoch = self._segmenter.utterance_epoch
+            await self._reset_interim_slice_state()
         else:
             joined_text = ""
             debug_chunks: list[InterimChunkRecord] = []
@@ -108,7 +135,20 @@ class VadProxyPipeline:
             return
         await asyncio.gather(*self._utterance_tasks, return_exceptions=True)
 
-    def _reset_turn_if_new_utterance(self) -> None:
+    async def _await_pending_interims(self) -> None:
+        while self._interim_tasks or self._pending_interim_slices:
+            await self._pump_interim_queue()
+            await asyncio.gather(*self._interim_tasks, return_exceptions=True)
+            await asyncio.sleep(0)
+
+    async def _reset_interim_slice_state(self) -> None:
+        async with self._interim_lock:
+            self._next_slice_index = 0
+            self._interim_results.clear()
+            self._interim_emit_upto = 0
+            self._pending_interim_slices.clear()
+
+    async def _reset_turn_if_new_utterance(self) -> None:
         epoch = self._segmenter.utterance_epoch
         if epoch != self._turn_epoch:
             self._turn_texts.clear()
@@ -116,6 +156,7 @@ class VadProxyPipeline:
             self._turn_stt_confidence = None
             self._turn_debug_chunks.clear()
             self._turn_epoch = epoch
+            await self._reset_interim_slice_state()
 
     async def feed(self, pcm: bytes) -> None:
         """Push arbitrary-length PCM; processes any complete VAD chunks."""
@@ -127,9 +168,9 @@ class VadProxyPipeline:
             offset += self._chunk_bytes
             utterance = self._segmenter.process_chunk(chunk)
             if self.settings.interim_enabled:
-                await self._drain_and_emit_interims()
+                await self._drain_and_schedule_interims()
             if utterance is not None:
-                self._schedule_utterance(utterance)
+                await self._schedule_utterance(utterance)
         self._residual = buffer[offset:]
 
     async def finish(self) -> None:
@@ -137,25 +178,101 @@ class VadProxyPipeline:
         tail = self._segmenter.flush()
         if tail is not None:
             if self.settings.interim_enabled:
-                self._reset_turn_if_new_utterance()
-                await self._drain_and_emit_interims()
-            self._schedule_utterance(tail)
+                await self._reset_turn_if_new_utterance()
+                await self._drain_and_schedule_interims()
+            await self._schedule_utterance(tail)
+        await self._await_pending_interims()
         await self._await_pending_utterances()
 
-    async def _drain_and_emit_interims(self) -> None:
-        self._reset_turn_if_new_utterance()
+    async def _drain_and_schedule_interims(self) -> None:
+        await self._reset_turn_if_new_utterance()
         while True:
             interim_slice = self._segmenter.drain_interim()
             if interim_slice is None:
                 break
+            pending = _PendingInterimSlice(
+                slice=interim_slice,
+                slice_index=self._next_slice_index,
+                epoch=self._turn_epoch,
+            )
+            self._next_slice_index += 1
+            self._pending_interim_slices.append(pending)
+        await self._pump_interim_queue()
+
+    async def _pump_interim_queue(self) -> None:
+        while (
+            self._pending_interim_slices
+            and len(self._interim_tasks) < _INTERIM_STT_MAX_IN_FLIGHT
+        ):
+            pending = self._pending_interim_slices.popleft()
+            task = asyncio.create_task(self._handle_interim_slice(pending))
+            self._interim_tasks.add(task)
+            task.add_done_callback(self._interim_tasks.discard)
+
+    async def _handle_interim_slice(self, pending: _PendingInterimSlice) -> None:
+        try:
+            if pending.epoch != self._turn_epoch:
+                return
             try:
                 transcript = await self.c.stt.transcribe(
-                    interim_slice.pcm, self.settings.sample_rate
+                    pending.slice.pcm, self.settings.sample_rate
                 )
             except SttUnavailable as exc:
                 await self.c.output.send_error(str(exc), fatal=False)
+                await self._store_interim_result(
+                    pending.slice_index,
+                    _InterimSliceResult(
+                        epoch=pending.epoch,
+                        slice=pending.slice,
+                        text="",
+                        transcript=None,
+                    ),
+                )
+                return
+            try:
+                text = transcript.text.strip()
+                await self._store_interim_result(
+                    pending.slice_index,
+                    _InterimSliceResult(
+                        epoch=pending.epoch,
+                        slice=pending.slice,
+                        text=text,
+                        transcript=transcript,
+                    ),
+                )
+            except Exception:
+                _log.exception("Unexpected error processing interim slice %s", pending.slice_index)
+                await self._store_interim_result(
+                    pending.slice_index,
+                    _InterimSliceResult(
+                        epoch=pending.epoch,
+                        slice=pending.slice,
+                        text="",
+                        transcript=None,
+                    ),
+                )
+        finally:
+            await self._pump_interim_queue()
+
+    async def _store_interim_result(
+        self, slice_index: int, result: _InterimSliceResult
+    ) -> None:
+        async with self._interim_lock:
+            self._interim_results[slice_index] = result
+            emissions = self._flush_ordered_interims()
+        for joined, start_secs, end_secs, backend in emissions:
+            await self.c.output.send_interim(joined, start_secs, end_secs, backend)
+
+    def _flush_ordered_interims(self) -> list[tuple[str, float, float, str]]:
+        emissions: list[tuple[str, float, float, str]] = []
+        while self._interim_emit_upto in self._interim_results:
+            result = self._interim_results.pop(self._interim_emit_upto)
+            self._interim_emit_upto += 1
+            if result.epoch != self._turn_epoch:
                 continue
-            text = transcript.text.strip()
+            interim_slice = result.slice
+            text = result.text
+            transcript = result.transcript
             if self.settings.debug_interim_chunks:
                 self._turn_debug_chunks.append(
                     InterimChunkRecord(
@@ -171,16 +288,16 @@ class VadProxyPipeline:
             if not text:
                 continue
             self._turn_texts.append(text)
-            if not self._turn_stt_backend:
-                self._turn_stt_backend = transcript.backend
-            self._turn_stt_confidence = transcript.confidence
+            if transcript is not None:
+                if not self._turn_stt_backend:
+                    self._turn_stt_backend = transcript.backend
+                self._turn_stt_confidence = transcript.confidence
+                backend = transcript.backend
+            else:
+                backend = self.c.stt.name
             joined = " ".join(self._turn_texts)
-            await self.c.output.send_interim(
-                joined,
-                interim_slice.start_secs,
-                interim_slice.end_secs,
-                transcript.backend,
-            )
+            emissions.append((joined, interim_slice.start_secs, interim_slice.end_secs, backend))
+        return emissions
 
     async def _handle_utterance(
         self, utterance: Utterance, joined_text: str, debug_chunks: list[InterimChunkRecord]
@@ -257,6 +374,7 @@ class VadProxyPipeline:
             await self.c.output.send_error("internal error processing utterance", fatal=True)
 
     async def aclose(self) -> None:
+        await self._await_pending_interims()
         await self._await_pending_utterances()
         await asyncio.gather(
             self.c.stt.aclose(),
