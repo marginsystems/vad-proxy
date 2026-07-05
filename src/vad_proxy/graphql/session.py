@@ -129,7 +129,13 @@ class _EndUtterance:
 
 _END_UTTERANCE = _EndUtterance()
 _STOP = object()
-_EVENT_STOP = object()
+
+
+class _EventStop(VoiceEventData):
+    pass
+
+
+_EVENT_STOP = _EventStop(kind="session_started")
 
 
 def _build_session_pipeline(
@@ -148,7 +154,7 @@ class Session:
         self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = (
             asyncio.Queue(maxsize=_INPUT_QUEUE_MAX)
         )
-        self._event_queue: asyncio.Queue[VoiceEventData | object] = asyncio.Queue()
+        self._event_queue: asyncio.Queue[VoiceEventData] = asyncio.Queue()
         self._pipeline = _build_session_pipeline(settings, self._event_queue)
         self._stopped = False
         self._consumer = asyncio.create_task(
@@ -170,7 +176,7 @@ class Session:
             raise
         except Exception as exc:
             _log.exception("session %s consumer failed", self.session_id)
-            self._event_queue.put_nowait(
+            await self._event_queue.put(
                 VoiceEventData(
                     kind="error",
                     message=str(exc),
@@ -183,7 +189,7 @@ class Session:
                 await self._pipeline.aclose()
             except Exception:
                 pass
-            self._event_queue.put_nowait(_EVENT_STOP)
+            await self._event_queue.put(_EVENT_STOP)
 
     def _enqueue(self, item: bytes | _EndUtterance) -> None:
         if self._stopped:
