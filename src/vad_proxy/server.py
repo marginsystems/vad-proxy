@@ -171,6 +171,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "interim_enabled": settings.interim_enabled,
             "debug_interim_chunks": settings.debug_interim_chunks,
             "voice_api_key_required": bool(settings.voice_api_key),
+            "max_sessions": settings.max_sessions,
+            "active_sessions": session_manager.active_sessions,
         }
 
     @app.websocket("/ws")

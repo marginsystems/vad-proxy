@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     allowed_origins: str = ""
     # Shared secret for GraphQL connectionParams.apiKey (non-localhost clients).
     voice_api_key: str = ""
+    # Max concurrent GraphQL listen subscriptions (0 = unlimited).
+    max_sessions: int = 10
+    # Max outbound events buffered per session before pressure policies apply.
+    event_queue_max: int = 64
 
     # --- logging -------------------------------------------------------
     log_dir: str = "logs"

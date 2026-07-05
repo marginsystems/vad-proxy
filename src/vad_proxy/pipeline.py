@@ -28,6 +28,7 @@ from vad_proxy.stt.base import SttBackend
 from vad_proxy.stt.factory import build_stt
 from vad_proxy.stt.retry import SttUnavailable
 
+_log = logging.getLogger(__name__)
 _transcript_log = logging.getLogger("vad_proxy.transcript")
 
 
@@ -82,6 +83,30 @@ class VadProxyPipeline:
         self._turn_stt_confidence: float | None = None
         self._turn_epoch = 0
         self._turn_debug_chunks: list[InterimChunkRecord] = []
+        self._utterance_tasks: set[asyncio.Task] = set()
+
+    def _schedule_utterance(self, utterance: Utterance) -> None:
+        if self.settings.interim_enabled:
+            joined_text = " ".join(self._turn_texts)
+            debug_chunks = list(self._turn_debug_chunks)
+            self._turn_texts.clear()
+            self._turn_stt_backend = ""
+            self._turn_stt_confidence = None
+            self._turn_debug_chunks.clear()
+            self._turn_epoch = self._segmenter.utterance_epoch
+        else:
+            joined_text = ""
+            debug_chunks: list[InterimChunkRecord] = []
+        task = asyncio.create_task(
+            self._handle_utterance(utterance, joined_text, debug_chunks)
+        )
+        self._utterance_tasks.add(task)
+        task.add_done_callback(self._utterance_tasks.discard)
+
+    async def _await_pending_utterances(self) -> None:
+        if not self._utterance_tasks:
+            return
+        await asyncio.gather(*self._utterance_tasks, return_exceptions=True)
 
     def _reset_turn_if_new_utterance(self) -> None:
         epoch = self._segmenter.utterance_epoch
@@ -104,7 +129,7 @@ class VadProxyPipeline:
             if self.settings.interim_enabled:
                 await self._drain_and_emit_interims()
             if utterance is not None:
-                await self._handle_utterance(utterance)
+                self._schedule_utterance(utterance)
         self._residual = buffer[offset:]
 
     async def finish(self) -> None:
@@ -114,7 +139,8 @@ class VadProxyPipeline:
             if self.settings.interim_enabled:
                 self._reset_turn_if_new_utterance()
                 await self._drain_and_emit_interims()
-            await self._handle_utterance(tail)
+            self._schedule_utterance(tail)
+        await self._await_pending_utterances()
 
     async def _drain_and_emit_interims(self) -> None:
         self._reset_turn_if_new_utterance()
@@ -156,83 +182,82 @@ class VadProxyPipeline:
                 transcript.backend,
             )
 
-    async def _handle_utterance(self, utterance: Utterance) -> None:
-        turn_confidence: float | None = None
-        if self.settings.interim_enabled:
-            joined_text = " ".join(self._turn_texts)
-            debug_chunks = list(self._turn_debug_chunks)
-            self._turn_texts.clear()
-            self._turn_stt_backend = ""
-            self._turn_stt_confidence = None
-            self._turn_debug_chunks.clear()
-            self._turn_epoch = self._segmenter.utterance_epoch
-            try:
-                transcript = await self.c.stt.transcribe(
-                    utterance.pcm, utterance.sample_rate
-                )
+    async def _handle_utterance(
+        self, utterance: Utterance, joined_text: str, debug_chunks: list[InterimChunkRecord]
+    ) -> None:
+        try:
+            turn_confidence: float | None = None
+            if self.settings.interim_enabled:
+                try:
+                    transcript = await self.c.stt.transcribe(
+                        utterance.pcm, utterance.sample_rate
+                    )
+                    raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
+                    stt_backend = transcript.backend
+                    turn_confidence = transcript.confidence
+                except SttUnavailable as exc:
+                    await self.c.output.send_error(str(exc), fatal=False)
+                    raw_text = self.c.personalizer.bias_vocabulary(joined_text)
+                    stt_backend = self.c.stt.name
+                    turn_confidence = None
+                if not raw_text.strip():
+                    if self.settings.debug_interim_chunks and debug_chunks:
+                        await self.c.output.send_chunk_debug(debug_chunks)
+                    return
+            else:
+                try:
+                    transcript = await self.c.stt.transcribe(
+                        utterance.pcm, utterance.sample_rate
+                    )
+                except SttUnavailable as exc:
+                    await self.c.output.send_error(str(exc), fatal=False)
+                    return
                 raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
                 stt_backend = transcript.backend
-                turn_confidence = transcript.confidence
-            except SttUnavailable as exc:
-                await self.c.output.send_error(str(exc), fatal=False)
-                raw_text = self.c.personalizer.bias_vocabulary(joined_text)
-                stt_backend = self.c.stt.name
-                turn_confidence = None
-            if not raw_text.strip():
-                if self.settings.debug_interim_chunks and debug_chunks:
-                    await self.c.output.send_chunk_debug(debug_chunks)
-                return
-        else:
-            try:
-                transcript = await self.c.stt.transcribe(
-                    utterance.pcm, utterance.sample_rate
-                )
-            except SttUnavailable as exc:
-                await self.c.output.send_error(str(exc), fatal=False)
-                return
-            raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
-            stt_backend = transcript.backend
-            debug_chunks = []
-            if not raw_text.strip():
-                return
+                if not raw_text.strip():
+                    return
 
-        result = await self.c.smart.process(raw_text)
+            result = await self.c.smart.process(raw_text)
 
-        final = FinalText(
-            text=result.text,
-            turn_complete=result.turn_complete,
-            end_phrase=result.end_phrase,
-            start_secs=utterance.start_secs,
-            end_secs=utterance.end_secs,
-            stt_backend=stt_backend,
-            refined=result.refined,
-            meta={},
-        )
-        if not self.settings.interim_enabled:
-            final.meta["stt_confidence"] = transcript.confidence
-        elif turn_confidence is not None:
-            final.meta["stt_confidence"] = turn_confidence
+            final = FinalText(
+                text=result.text,
+                turn_complete=result.turn_complete,
+                end_phrase=result.end_phrase,
+                start_secs=utterance.start_secs,
+                end_secs=utterance.end_secs,
+                stt_backend=stt_backend,
+                refined=result.refined,
+                meta={},
+            )
+            if not self.settings.interim_enabled:
+                final.meta["stt_confidence"] = transcript.confidence
+            elif turn_confidence is not None:
+                final.meta["stt_confidence"] = turn_confidence
 
-        await self.c.personalizer.record_sample(
-            utterance.pcm,
-            utterance.sample_rate,
-            result.text,
-            meta={"start_secs": utterance.start_secs, "end_secs": utterance.end_secs},
-        )
+            await self.c.personalizer.record_sample(
+                utterance.pcm,
+                utterance.sample_rate,
+                result.text,
+                meta={"start_secs": utterance.start_secs, "end_secs": utterance.end_secs},
+            )
 
-        _transcript_log.info(
-            "[%.2f-%.2f] %s%s",
-            final.start_secs,
-            final.end_secs,
-            final.text,
-            "" if final.turn_complete else " [partial]",
-        )
+            _transcript_log.info(
+                "[%.2f-%.2f] %s%s",
+                final.start_secs,
+                final.end_secs,
+                final.text,
+                "" if final.turn_complete else " [partial]",
+            )
 
-        await self.c.output.send(final)
-        if self.settings.debug_interim_chunks and debug_chunks:
-            await self.c.output.send_chunk_debug(debug_chunks)
+            await self.c.output.send(final)
+            if self.settings.debug_interim_chunks and debug_chunks:
+                await self.c.output.send_chunk_debug(debug_chunks)
+        except Exception:
+            _log.exception("unhandled error processing utterance")
+            await self.c.output.send_error("internal error processing utterance", fatal=True)
 
     async def aclose(self) -> None:
+        await self._await_pending_utterances()
         await asyncio.gather(
             self.c.stt.aclose(),
             self.c.smart.aclose(),

@@ -28,6 +28,7 @@ _log = logging.getLogger(__name__)
 EventKind = Literal["session_started", "transcript", "chunk_debug", "error"]
 
 _INPUT_QUEUE_MAX = 128
+_CHUNK_DEBUG_PRESSURE_RATIO = 0.75
 
 
 @dataclass
@@ -75,11 +76,40 @@ class QueueOutputAdapter(OutputAdapter):
 
     name = "queue"
 
-    def __init__(self, queue: asyncio.Queue[VoiceEventData]) -> None:
+    def __init__(
+        self, queue: asyncio.Queue[VoiceEventData], *, maxsize: int
+    ) -> None:
         self._queue = queue
+        self._maxsize = maxsize
+
+    async def _put_required(self, event: VoiceEventData) -> None:
+        try:
+            self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            _log.warning(
+                "required event (%s) queue full (%s/%s); draining one item to deliver",
+                event.kind,
+                self._queue.qsize(),
+                self._maxsize,
+            )
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            try:
+                self._queue.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
+
+    def _put_best_effort(self, event: VoiceEventData) -> bool:
+        try:
+            self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            return False
+        return True
 
     async def send(self, final: FinalText) -> None:
-        await self._queue.put(
+        await self._put_required(
             VoiceEventData(
                 kind="transcript",
                 text=final.text,
@@ -94,7 +124,7 @@ class QueueOutputAdapter(OutputAdapter):
     async def send_interim(
         self, text: str, start_secs: float, end_secs: float, stt_backend: str
     ) -> None:
-        await self._queue.put(
+        if not self._put_best_effort(
             VoiceEventData(
                 kind="transcript",
                 interim=True,
@@ -103,22 +133,64 @@ class QueueOutputAdapter(OutputAdapter):
                 end_secs=end_secs,
                 stt_backend=stt_backend,
             )
-        )
+        ):
+            _log.warning(
+                "interim dropped: event queue full (%s/%s)",
+                self._queue.qsize(),
+                self._maxsize,
+            )
 
     async def send_chunk_debug(self, chunks: list[InterimChunkRecord]) -> None:
         if not chunks:
             return
-        await self._queue.put(
+        pressure_threshold = int(self._maxsize * _CHUNK_DEBUG_PRESSURE_RATIO)
+        if self._queue.qsize() >= pressure_threshold:
+            _log.warning(
+                "chunk_debug skipped: event queue under pressure (%s/%s)",
+                self._queue.qsize(),
+                self._maxsize,
+            )
+            if not self._put_best_effort(
+                VoiceEventData(
+                    kind="error",
+                    message="chunk_debug skipped: event queue under pressure",
+                    fatal=False,
+                )
+            ):
+                _log.warning(
+                    "error under-pressure event dropped: queue full (%s/%s)",
+                    self._queue.qsize(),
+                    self._maxsize,
+                )
+            return
+        if not self._put_best_effort(
             VoiceEventData(
                 kind="chunk_debug",
                 start_secs=chunks[0].start_secs,
                 end_secs=chunks[-1].end_secs,
                 chunks=[_chunk_to_event(c) for c in chunks],
             )
-        )
+        ):
+            _log.warning(
+                "chunk_debug skipped: event queue full (%s/%s)",
+                self._queue.qsize(),
+                self._maxsize,
+            )
+            if not self._put_best_effort(
+                VoiceEventData(
+                    kind="error",
+                    message="chunk_debug skipped: event queue full",
+                    fatal=False,
+                )
+            ):
+                _log.warning(
+                    "chunk_debug error event dropped: queue full (%s/%s)",
+                    self._queue.qsize(),
+                    self._maxsize,
+                )
 
     async def send_error(self, message: str, fatal: bool = False) -> None:
-        await self._queue.put(
+        await self._put_required(
             VoiceEventData(kind="error", message=message, fatal=fatal)
         )
 
@@ -142,7 +214,10 @@ def _build_session_pipeline(
     settings: Settings, event_queue: asyncio.Queue[VoiceEventData]
 ) -> VadProxyPipeline:
     """Build a pipeline whose output adapter feeds ``event_queue``."""
-    return build_pipeline(settings, output=QueueOutputAdapter(event_queue))
+    return build_pipeline(
+        settings,
+        output=QueueOutputAdapter(event_queue, maxsize=settings.event_queue_max),
+    )
 
 
 class Session:
@@ -154,7 +229,9 @@ class Session:
         self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = (
             asyncio.Queue(maxsize=_INPUT_QUEUE_MAX)
         )
-        self._event_queue: asyncio.Queue[VoiceEventData] = asyncio.Queue()
+        self._event_queue: asyncio.Queue[VoiceEventData] = asyncio.Queue(
+            maxsize=settings.event_queue_max
+        )
         self._pipeline = _build_session_pipeline(settings, self._event_queue)
         self._stopped = False
         self._consumer = asyncio.create_task(
@@ -176,20 +253,28 @@ class Session:
             raise
         except Exception as exc:
             _log.exception("session %s consumer failed", self.session_id)
-            await self._event_queue.put(
-                VoiceEventData(
-                    kind="error",
-                    message=str(exc),
-                    fatal=True,
-                )
-            )
+            await self._pipeline.output.send_error(str(exc), fatal=True)
             raise
         finally:
             try:
                 await self._pipeline.aclose()
-            except Exception:
+            except BaseException:
                 pass
-            await self._event_queue.put(_EVENT_STOP)
+            try:
+                self._event_queue.put_nowait(_EVENT_STOP)
+            except asyncio.QueueFull:
+                _log.warning(
+                    "session %s queue full; draining one event to deliver STOP",
+                    self.session_id,
+                )
+                try:
+                    self._event_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    self._event_queue.put_nowait(_EVENT_STOP)
+                except asyncio.QueueFull:
+                    pass
 
     def _enqueue(self, item: bytes | _EndUtterance) -> None:
         if self._stopped:
@@ -244,11 +329,22 @@ class SessionManager:
         self.settings = settings
         self._sessions: dict[str, Session] = {}
 
+    @property
+    def active_sessions(self) -> int:
+        return len(self._sessions)
+
     def create_session(self, sample_rate: int | None = None) -> Session:
         if sample_rate is not None and sample_rate != self.settings.sample_rate:
             raise ValueError(
                 f"unsupported sampleRate: {sample_rate} "
                 f"(server requires {self.settings.sample_rate})"
+            )
+        if (
+            self.settings.max_sessions
+            and len(self._sessions) >= self.settings.max_sessions
+        ):
+            raise ValueError(
+                f"max concurrent sessions ({self.settings.max_sessions}) reached"
             )
         session_id = str(uuid.uuid4())
         session = Session(session_id, self.settings)
