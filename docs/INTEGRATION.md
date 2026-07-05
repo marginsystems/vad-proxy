@@ -111,8 +111,10 @@ type Subscription {
 - **`interim`**: when `VAD_PROXY_INTERIM_ENABLED=true`, the server may emit
   additional `transcript` events with `interim: true` while the user is still
   speaking. These carry **raw STT text** (joined chunk transcripts so far) and
-  are **not** LLM-polished. The final `transcript` for the turn has
-  `interim: false` (default) and replaces the live line in the UI.
+  are **not** LLM-polished. Interim slice STT runs in background tasks so
+  `appendAudio` keeps draining the input queue while Deepgram transcribes.
+  The final `transcript` for the turn has `interim: false` (default) and
+  replaces the live line in the UI.
 - **Smart chunking** (default when interim is on): slices are cut on brief RMS
   dips between words after a minimum buffer (`VAD_PROXY_INTERIM_MIN_SECS`, default
   `0.5`), capped at `VAD_PROXY_INTERIM_SECS` (max slice). Tunables:
