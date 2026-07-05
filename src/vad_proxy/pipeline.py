@@ -111,6 +111,9 @@ class VadProxyPipeline:
         """Flush any in-progress utterance at end of stream."""
         tail = self._segmenter.flush()
         if tail is not None:
+            if self.settings.interim_enabled:
+                self._reset_turn_if_new_utterance()
+                await self._drain_and_emit_interims()
             await self._handle_utterance(tail)
 
     async def _drain_and_emit_interims(self) -> None:
@@ -156,8 +159,6 @@ class VadProxyPipeline:
     async def _handle_utterance(self, utterance: Utterance) -> None:
         turn_confidence: float | None = None
         if self.settings.interim_enabled:
-            self._reset_turn_if_new_utterance()
-            await self._drain_and_emit_interims()
             joined_text = " ".join(self._turn_texts)
             debug_chunks = list(self._turn_debug_chunks)
             self._turn_texts.clear()
