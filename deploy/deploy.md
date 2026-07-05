@@ -13,8 +13,10 @@ WebSocket upgrades for `/graphql` and `/health`.
 
 - DNS `voice.biosystems.dev` → server public IP (grey-cloud / DNS-only for
   HTTP-01).
-- `.env` on the server with API keys and `VAD_PROXY_ALLOWED_ORIGINS` (e.g.
-  `https://biosystems.dev` for the organism app origin).
+- `.env` on the server with API keys, `VAD_PROXY_ALLOWED_ORIGINS` (e.g.
+  `https://biosystems.dev` for the organism app origin), and optionally
+  `VAD_PROXY_VOICE_API_KEY` (shared secret for GraphQL `connectionParams.apiKey`
+  on non-localhost clients).
 - Docker and docker compose.
 
 ## Quick start

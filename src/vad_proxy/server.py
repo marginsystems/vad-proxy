@@ -67,8 +67,52 @@ def _origin_ok(settings: Settings, origin: str | None) -> bool:
     return origin in _parse_configured_origins(settings.allowed_origins)
 
 
+def _connection_params_api_key(connection_params: dict | None) -> str | None:
+    if not connection_params:
+        return None
+    key = connection_params.get("apiKey")
+    if key is None:
+        return None
+    return str(key)
+
+
+def _api_key_ok(settings: Settings, connection_params: dict | None) -> bool:
+    if not settings.voice_api_key:
+        return True
+    provided = _connection_params_api_key(connection_params)
+    return provided == settings.voice_api_key
+
+
+def _voice_connect_ok(
+    settings: Settings,
+    origin: str | None,
+    connection_params: dict | None,
+) -> bool:
+    if origin is not None and not _origin_ok(settings, origin):
+        return False
+    if not settings.voice_api_key:
+        return True
+    if origin is not None and _is_localhost_origin(origin):
+        return True
+    return _api_key_ok(settings, connection_params)
+
+
+def _ws_api_key_ok(settings: Settings, websocket: WebSocket) -> bool:
+    if not settings.voice_api_key:
+        return True
+    query_key = websocket.query_params.get("apiKey")
+    if query_key == settings.voice_api_key:
+        return True
+    auth = websocket.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token == settings.voice_api_key:
+            return True
+    return False
+
+
 class OriginGraphQLRouter(GraphQLRouter):
-    """GraphQL router that validates the browser ``Origin`` header on WS connect."""
+    """GraphQL router that validates Origin and optional voice API key on connect."""
 
     def __init__(self, settings: Settings, *args: Any, **kwargs: Any) -> None:
         self._settings = settings
@@ -76,13 +120,16 @@ class OriginGraphQLRouter(GraphQLRouter):
 
     async def on_ws_connect(self, context: Context) -> Any:
         request = None
+        connection_params: dict | None = None
         if isinstance(context, dict):
             request = context.get("request")
+            connection_params = context.get("connection_params")
         elif hasattr(context, "request"):
             request = context.request
+            connection_params = getattr(context, "connection_params", None)
         origin = request.headers.get("origin") if request is not None else None
-        if not _origin_ok(self._settings, origin):
-            raise ConnectionRejectionError({"message": "origin not allowed"})
+        if not _voice_connect_ok(self._settings, origin, connection_params):
+            raise ConnectionRejectionError({"message": "origin or api key not allowed"})
         return await super().on_ws_connect(context)
 
 
@@ -123,11 +170,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "allowed_origins": _effective_origins(settings),
             "interim_enabled": settings.interim_enabled,
             "debug_interim_chunks": settings.debug_interim_chunks,
+            "voice_api_key_required": bool(settings.voice_api_key),
         }
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
         await websocket.accept()
+        if not _ws_api_key_ok(settings, websocket):
+            await websocket.close(code=4403)
+            return
         pipeline = build_pipeline(settings)
         try:
             while True:

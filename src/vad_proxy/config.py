@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     # Comma-separated browser app origins (full URLs with scheme).
     # localhost / 127.0.0.1 are always permitted for local dev.
     allowed_origins: str = ""
+    # Shared secret for GraphQL connectionParams.apiKey (non-localhost clients).
+    voice_api_key: str = ""
 
     # --- logging -------------------------------------------------------
     log_dir: str = "logs"

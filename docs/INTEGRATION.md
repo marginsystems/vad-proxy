@@ -27,21 +27,32 @@ Configure allowed origins in `.env`:
 VAD_PROXY_ALLOWED_ORIGINS=https://biosystems.dev
 ```
 
-Non-browser clients (Python scripts, integration tests) may connect without an
-`Origin` header.
-
-If the origin is not allowed, the server closes the socket with code **4403
-Forbidden** before any subscription starts.
+When `VAD_PROXY_VOICE_API_KEY` is set, clients connecting from **non-localhost**
+origins (or without an `Origin` header, e.g. scripts) must pass the same value
+in GraphQL `connectionParams`:
 
 ```js
 import { createClient } from "graphql-ws";
 
 const client = createClient({
   url: "wss://voice.biosystems.dev/graphql",
+  connectionParams: { apiKey: process.env.VOICE_API_KEY },
 });
 ```
 
-No `connectionParams` or shared secret is required.
+| `VAD_PROXY_VOICE_API_KEY` | Origin | API key required |
+|---------------------------|--------|------------------|
+| unset | any | No (dev default) |
+| set | localhost / 127.0.0.1 | No (Voice Lab local dev) |
+| set | allowed production origin | Yes (`connectionParams.apiKey`) |
+| set | missing (scripts) | Yes (`connectionParams.apiKey`) |
+
+If the origin is not allowed or the API key is missing/invalid when required,
+the server closes the socket with code **4403 Forbidden** before any
+subscription starts.
+
+Legacy `/ws` (binary PCM) accepts the same secret via `?apiKey=` or
+`Authorization: Bearer <key>` when `VAD_PROXY_VOICE_API_KEY` is set.
 
 ## GraphQL schema
 
@@ -207,4 +218,5 @@ organism edits are intentionally out of scope for the initial GraphQL rollout.
 curl https://voice.biosystems.dev/health
 ```
 
-Returns JSON including `sample_rate`, `stt_backend`, and `allowed_origins`.
+Returns JSON including `sample_rate`, `stt_backend`, `allowed_origins`, and
+`voice_api_key_required` (whether clients must send `connectionParams.apiKey`).

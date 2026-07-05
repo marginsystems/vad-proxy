@@ -125,8 +125,10 @@ export class VoiceGraphqlSession {
     this.resetSessionReady();
     this.resetSubscriptionClosed();
     this.turnWaiters = [];
+    const voiceApiKey = import.meta.env.VITE_VOICE_API_KEY as string | undefined;
     this.client = createClient({
       url: this.wsUrl,
+      connectionParams: voiceApiKey ? { apiKey: voiceApiKey } : undefined,
       on: {
         connected: () => this.callbacks.onStatus("WebSocket connected"),
         closed: (event: unknown) => {
@@ -135,7 +137,7 @@ export class VoiceGraphqlSession {
               ? (event as { code?: number }).code
               : undefined;
           if (code === 4403) {
-            this.failSession("Origin not allowed by server (4403)");
+            this.failSession("Origin or API key not allowed by server (4403)");
           }
         },
         error: (err) => {
