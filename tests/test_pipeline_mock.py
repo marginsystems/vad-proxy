@@ -9,10 +9,13 @@ produces no output.
 
 from __future__ import annotations
 
+import asyncio
+import time
+
 import pytest
 
 from vad_proxy.config import load_settings
-from vad_proxy.llm.base import PassthroughSmartLayer
+from vad_proxy.llm.base import PassthroughSmartLayer, SmartLayer, SmartResult
 from vad_proxy.output.base import FinalText, OutputAdapter
 from vad_proxy.pipeline import PipelineComponents, VadProxyPipeline
 from vad_proxy.personalization.base import NullPersonalizer
@@ -188,3 +191,54 @@ async def test_pipeline_final_re_stt_uses_full_utterance(
     final_text = capture.items[-1].text
     assert "full utterance text" in final_text
     assert "slice-part slice-part" not in final_text
+
+
+class SlowSmartLayer(SmartLayer):
+    def __init__(self, delay_secs: float = 2.0) -> None:
+        self.delay_secs = delay_secs
+
+    async def process(self, raw_transcript: str) -> SmartResult:
+        await asyncio.sleep(self.delay_secs)
+        return SmartResult(
+            text=raw_transcript.strip(),
+            turn_complete=True,
+            end_phrase=False,
+            refined=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_feed_continues_while_utterance_processing(
+    model_available, test_audio_path
+):
+    """feed() must not block on slow STT/LLM; utterance work runs in background."""
+    from vad_proxy.audio.decode import decode_to_pcm16
+
+    settings = load_settings(stt_backend="mock", llm_enabled=False, interim_enabled=False)
+    capture = CaptureOutput()
+    components = PipelineComponents(
+        vad=SileroVad(sample_rate=settings.sample_rate),
+        stt=MockSttBackend(),
+        smart=SlowSmartLayer(),
+        output=capture,
+        personalizer=NullPersonalizer(),
+    )
+    pipeline = VadProxyPipeline(settings, components)
+
+    pcm = decode_to_pcm16(test_audio_path, 16000)
+    for i in range(0, len(pcm), 333):
+        await pipeline.feed(pcm[i : i + 333])
+
+    silence = b"\x00\x00" * settings.sample_rate
+    for i in range(0, len(silence), 333):
+        await pipeline.feed(silence[i : i + 333])
+
+    start = time.monotonic()
+    for _ in range(10):
+        await pipeline.feed(b"\x00\x00" * 333)
+    elapsed = time.monotonic() - start
+    assert elapsed < 0.5, f"feed blocked {elapsed:.2f}s while utterance processing"
+
+    await pipeline.finish()
+    await pipeline.aclose()
+    assert capture.items

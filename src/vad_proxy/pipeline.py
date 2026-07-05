@@ -82,6 +82,17 @@ class VadProxyPipeline:
         self._turn_stt_confidence: float | None = None
         self._turn_epoch = 0
         self._turn_debug_chunks: list[InterimChunkRecord] = []
+        self._utterance_tasks: set[asyncio.Task] = set()
+
+    def _schedule_utterance(self, utterance: Utterance) -> None:
+        task = asyncio.create_task(self._handle_utterance(utterance))
+        self._utterance_tasks.add(task)
+        task.add_done_callback(self._utterance_tasks.discard)
+
+    async def _await_pending_utterances(self) -> None:
+        if not self._utterance_tasks:
+            return
+        await asyncio.gather(*self._utterance_tasks, return_exceptions=True)
 
     def _reset_turn_if_new_utterance(self) -> None:
         epoch = self._segmenter.utterance_epoch
@@ -104,7 +115,7 @@ class VadProxyPipeline:
             if self.settings.interim_enabled:
                 await self._drain_and_emit_interims()
             if utterance is not None:
-                await self._handle_utterance(utterance)
+                self._schedule_utterance(utterance)
         self._residual = buffer[offset:]
 
     async def finish(self) -> None:
@@ -114,7 +125,8 @@ class VadProxyPipeline:
             if self.settings.interim_enabled:
                 self._reset_turn_if_new_utterance()
                 await self._drain_and_emit_interims()
-            await self._handle_utterance(tail)
+            self._schedule_utterance(tail)
+        await self._await_pending_utterances()
 
     async def _drain_and_emit_interims(self) -> None:
         self._reset_turn_if_new_utterance()
@@ -233,6 +245,7 @@ class VadProxyPipeline:
             await self.c.output.send_chunk_debug(debug_chunks)
 
     async def aclose(self) -> None:
+        await self._await_pending_utterances()
         await asyncio.gather(
             self.c.stt.aclose(),
             self.c.smart.aclose(),

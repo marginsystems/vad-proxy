@@ -54,6 +54,17 @@ subscription starts.
 Legacy `/ws` (binary PCM) accepts the same secret via `?apiKey=` or
 `Authorization: Bearer <key>` when `VAD_PROXY_VOICE_API_KEY` is set.
 
+### Session limits
+
+The server caps concurrent `listen` subscriptions via `VAD_PROXY_MAX_SESSIONS`
+(default **10**). When the cap is reached, new subscriptions fail immediately
+with a GraphQL error — no `session_started` event is emitted.
+
+Idle sessions (connected but no audio) are allowed: they incur no STT or LLM
+cost. Cleanup happens when the client disconnects or calls `stopSession`.
+
+Check `/health` for `max_sessions` and `active_sessions`.
+
 ## GraphQL schema
 
 ```graphql
@@ -112,7 +123,8 @@ type Subscription {
 - **Chunk debug** (`VAD_PROXY_DEBUG_INTERIM_CHUNKS=true`, interim on): after each
   turn the server emits a `chunk_debug` event with per-slice WAV audio, STT text,
   timestamps, and cut reason (`dip` / `max` / `tail`). Voice Lab shows replay
-  controls for each slice.
+  controls for each slice. Under outbound queue pressure, `chunk_debug` may be
+  omitted and a non-fatal `error` event is emitted instead (dev-only).
 - **`error`**: pipeline or session failures. `message` describes what happened.
   `fatal: false` means a single STT slice was skipped (session continues).
   `fatal: true` means the session consumer crashed and the subscription will
@@ -224,5 +236,6 @@ organism edits are intentionally out of scope for the initial GraphQL rollout.
 curl https://voice.biosystems.dev/health
 ```
 
-Returns JSON including `sample_rate`, `stt_backend`, `allowed_origins`, and
-`voice_api_key_required` (whether clients must send `connectionParams.apiKey`).
+Returns JSON including `sample_rate`, `stt_backend`, `allowed_origins`,
+`voice_api_key_required` (whether clients must send `connectionParams.apiKey`),
+`max_sessions`, and `active_sessions`.
