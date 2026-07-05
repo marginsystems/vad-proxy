@@ -139,6 +139,7 @@ class VadProxyPipeline:
         while self._interim_tasks or self._pending_interim_slices:
             await self._pump_interim_queue()
             await asyncio.gather(*self._interim_tasks, return_exceptions=True)
+            await asyncio.sleep(0)
 
     async def _reset_interim_slice_state(self) -> None:
         async with self._interim_lock:
