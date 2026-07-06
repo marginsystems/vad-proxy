@@ -60,10 +60,14 @@ class _InterimSliceResult:
 
 
 def build_pipeline(
-    settings: Settings, output: OutputAdapter | None = None
+    settings: Settings,
+    output: OutputAdapter | None = None,
+    *,
+    vad: SileroVad | None = None,
 ) -> "VadProxyPipeline":
     """Construct a pipeline with all components wired from settings."""
-    vad = SileroVad(sample_rate=settings.sample_rate)
+    if vad is None:
+        vad = SileroVad(sample_rate=settings.sample_rate)
     components = PipelineComponents(
         vad=vad,
         stt=build_stt(settings),

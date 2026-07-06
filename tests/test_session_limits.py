@@ -7,6 +7,7 @@ import asyncio
 import pytest
 
 from vad_proxy.config import load_settings
+from vad_proxy.audio.vad import get_shared_silero_vad_model
 from vad_proxy.graphql.session import QueueOutputAdapter, SessionManager, VoiceEventData
 from vad_proxy.output.base import FinalText, InterimChunkRecord
 
@@ -14,7 +15,8 @@ from vad_proxy.output.base import FinalText, InterimChunkRecord
 @pytest.mark.asyncio
 async def test_create_session_rejects_at_max(model_available):
     settings = load_settings(max_sessions=2)
-    manager = SessionManager(settings)
+    vad_model = get_shared_silero_vad_model(settings.sample_rate)
+    manager = SessionManager(settings, vad_model=vad_model)
     s1 = manager.create_session()
     s2 = manager.create_session()
     with pytest.raises(ValueError, match="max concurrent sessions"):
