@@ -133,7 +133,7 @@ class SharedSileroVadModel:
 
     def create_stream(self) -> "SileroVad":
         """Return a new per-session stream with isolated recurrent state."""
-        return SileroVad(shared_model=self)
+        return SileroVad(sample_rate=self.sample_rate, shared_model=self)
 
 
 def get_shared_silero_vad_model(
