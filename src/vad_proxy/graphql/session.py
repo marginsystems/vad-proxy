@@ -20,6 +20,7 @@ from typing import AsyncIterator, Literal
 
 from vad_proxy.audio.decode import pcm16_to_wav
 from vad_proxy.config import Settings
+from vad_proxy.audio.vad import SharedSileroVadModel
 from vad_proxy.output.base import FinalText, InterimChunkRecord, OutputAdapter
 from vad_proxy.pipeline import VadProxyPipeline, build_pipeline
 
@@ -211,19 +212,24 @@ _EVENT_STOP = _EventStop(kind="session_started")
 
 
 def _build_session_pipeline(
-    settings: Settings, event_queue: asyncio.Queue[VoiceEventData]
+    settings: Settings,
+    event_queue: asyncio.Queue[VoiceEventData],
+    vad_model: SharedSileroVadModel,
 ) -> VadProxyPipeline:
     """Build a pipeline whose output adapter feeds ``event_queue``."""
     return build_pipeline(
         settings,
         output=QueueOutputAdapter(event_queue, maxsize=settings.event_queue_max),
+        vad=vad_model.create_stream(),
     )
 
 
 class Session:
     """One live voice subscription: input queue -> pipeline -> event queue."""
 
-    def __init__(self, session_id: str, settings: Settings) -> None:
+    def __init__(
+        self, session_id: str, settings: Settings, vad_model: SharedSileroVadModel
+    ) -> None:
         self.session_id = session_id
         self.settings = settings
         self._input_queue: asyncio.Queue[bytes | _EndUtterance | object] = (
@@ -232,7 +238,9 @@ class Session:
         self._event_queue: asyncio.Queue[VoiceEventData] = asyncio.Queue(
             maxsize=settings.event_queue_max
         )
-        self._pipeline = _build_session_pipeline(settings, self._event_queue)
+        self._pipeline = _build_session_pipeline(
+            settings, self._event_queue, vad_model
+        )
         self._stopped = False
         self._consumer = asyncio.create_task(
             self._consume(), name=f"vad-session-{session_id}"
@@ -325,8 +333,9 @@ class Session:
 class SessionManager:
     """Creates and tracks active GraphQL voice sessions."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, vad_model: SharedSileroVadModel) -> None:
         self.settings = settings
+        self._vad_model = vad_model
         self._sessions: dict[str, Session] = {}
 
     @property
@@ -347,7 +356,7 @@ class SessionManager:
                 f"max concurrent sessions ({self.settings.max_sessions}) reached"
             )
         session_id = str(uuid.uuid4())
-        session = Session(session_id, self.settings)
+        session = Session(session_id, self.settings, self._vad_model)
         self._sessions[session_id] = session
         return session
 

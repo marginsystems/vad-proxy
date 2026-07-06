@@ -63,7 +63,11 @@ with a GraphQL error — no `session_started` event is emitted.
 Idle sessions (connected but no audio) are allowed: they incur no STT or LLM
 cost. Cleanup happens when the client disconnects or calls `stopSession`.
 
-Check `/health` for `max_sessions` and `active_sessions`.
+Check `/health` for `max_sessions`, `active_sessions`, and `vad_model_loaded`.
+
+The Silero VAD ONNX model is loaded and warmed up **once per server process**.
+Each `listen` subscription gets its own isolated stream state (recurrent LSTM
+buffers); session connect does not reload the model.
 
 ## GraphQL schema
 

@@ -25,6 +25,7 @@ from strawberry.fastapi import GraphQLRouter
 from strawberry.http.typevars import Context
 
 from vad_proxy import __version__
+from vad_proxy.audio.vad import get_shared_silero_vad_model
 from vad_proxy.config import Settings, load_settings
 from vad_proxy.graphql.schema import schema
 from vad_proxy.graphql.session import SessionManager
@@ -135,7 +136,8 @@ class OriginGraphQLRouter(GraphQLRouter):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
-    session_manager = SessionManager(settings)
+    vad_model = get_shared_silero_vad_model(settings.sample_rate)
+    session_manager = SessionManager(settings, vad_model=vad_model)
     app = FastAPI(title="vad-proxy", version=__version__)
 
     origins = _effective_origins(settings)
@@ -173,6 +175,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "voice_api_key_required": bool(settings.voice_api_key),
             "max_sessions": settings.max_sessions,
             "active_sessions": session_manager.active_sessions,
+            "vad_model_loaded": True,
         }
 
     @app.websocket("/ws")
@@ -181,7 +184,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not _ws_api_key_ok(settings, websocket):
             await websocket.close(code=4403)
             return
-        pipeline = build_pipeline(settings)
+        pipeline = build_pipeline(settings, vad=vad_model.create_stream())
         try:
             while True:
                 message = await websocket.receive()
