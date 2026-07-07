@@ -33,10 +33,14 @@ export function lowpassBiquadCoeffs(
   };
 }
 
-export function applyBiquad(input: Float32Array, coeffs: BiquadCoeffs): Float32Array {
+export function applyBiquad(
+  input: Float32Array,
+  coeffs: BiquadCoeffs,
+  state?: { z1: number; z2: number },
+): Float32Array {
   const out = new Float32Array(input.length);
-  let z1 = 0;
-  let z2 = 0;
+  let z1 = state?.z1 ?? 0;
+  let z2 = state?.z2 ?? 0;
   const { b0, b1, b2, a1, a2 } = coeffs;
   for (let i = 0; i < input.length; i++) {
     const x = input[i];
@@ -44,6 +48,10 @@ export function applyBiquad(input: Float32Array, coeffs: BiquadCoeffs): Float32A
     z1 = b1 * x - a1 * y + z2;
     z2 = b2 * x - a2 * y;
     out[i] = y;
+  }
+  if (state) {
+    state.z1 = z1;
+    state.z2 = z2;
   }
   return out;
 }
@@ -56,6 +64,7 @@ export function lowpassForDownsample(
   fromRate: number,
   toRate: number,
   stages = 2,
+  states?: { z1: number; z2: number }[],
 ): Float32Array {
   const nyquist = toRate / 2;
   const cutoff = Math.min(fromRate / 2, nyquist) * 0.95;
@@ -67,7 +76,7 @@ export function lowpassForDownsample(
     _coeffCache.set(key, coeffs);
   }
   for (let s = 0; s < stages; s++) {
-    filtered = applyBiquad(filtered, coeffs);
+    filtered = applyBiquad(filtered, coeffs, states?.[s]);
   }
   return filtered;
 }
@@ -76,9 +85,10 @@ export function downsample(
   buffer: Float32Array,
   fromRate: number,
   toRate: number,
+  states?: { z1: number; z2: number }[],
 ): Float32Array {
   if (fromRate === toRate) return buffer;
-  const filtered = lowpassForDownsample(buffer, fromRate, toRate);
+  const filtered = lowpassForDownsample(buffer, fromRate, toRate, 2, states);
   const ratio = fromRate / toRate;
   const outLen = Math.floor(filtered.length / ratio);
   const out = new Float32Array(outLen);

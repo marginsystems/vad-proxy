@@ -53,6 +53,7 @@
     let chunkTimer = null;
     let stopping = false;
     const pcmChunks = [];
+    const filterStates = [{ z1: 0, z2: 0 }, { z1: 0, z2: 0 }];
     let inputRate = 0;
 
     const LISTEN_SUB = `subscription Listen {
@@ -113,9 +114,9 @@
       };
     }
 
-    function applyBiquad(input, coeffs) {
+    function applyBiquad(input, coeffs, state) {
       const out = new Float32Array(input.length);
-      let z1 = 0, z2 = 0;
+      let z1 = state?.z1 ?? 0, z2 = state?.z2 ?? 0;
       for (let i = 0; i < input.length; i++) {
         const x = input[i];
         const y = coeffs.b0 * x + z1;
@@ -123,17 +124,21 @@
         z2 = coeffs.b2 * x - coeffs.a2 * y;
         out[i] = y;
       }
+      if (state) {
+        state.z1 = z1;
+        state.z2 = z2;
+      }
       return out;
     }
 
-    function downsample(buffer, fromRate, toRate) {
+    function downsample(buffer, fromRate, toRate, states) {
       if (fromRate === toRate) return buffer;
       const nyquist = toRate / 2;
       const cutoff = Math.min(fromRate / 2, nyquist) * 0.95;
       const coeffs = lowpassBiquadCoeffs(fromRate, cutoff);
       let filtered = buffer;
       for (let s = 0; s < 2; s++) {
-        filtered = applyBiquad(filtered, coeffs);
+        filtered = applyBiquad(filtered, coeffs, states?.[s]);
       }
       const ratio = fromRate / toRate;
       const outLen = Math.floor(filtered.length / ratio);
@@ -201,7 +206,7 @@
       }
       if (stopping) return;
       pcmChunks.length = 0;
-      const b64 = int16ToBase64(floatToInt16(downsample(merged, inputRate, 16000)));
+      const b64 = int16ToBase64(floatToInt16(downsample(merged, inputRate, 16000, filterStates)));
       const { query, variables } = appendMutation(sessionId, b64);
       try {
         for await (const result of client.iterate({ query, variables })) {

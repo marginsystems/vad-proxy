@@ -161,6 +161,7 @@ export async function startMicCapture(
     const rawChunks: Float32Array[] = [];
     let stopping = false;
     let chunkTimer: ReturnType<typeof setTimeout> | null = null;
+    const filterStates: { z1: number; z2: number }[] = [{ z1: 0, z2: 0 }, { z1: 0, z2: 0 }];
 
     worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
       if (stopping) return;
@@ -186,7 +187,7 @@ export async function startMicCapture(
         off += c.length;
       }
       rawChunks.length = 0;
-      if (!stopping) onChunk(floatToInt16(downsample(merged, inputRate, 16000)));
+      if (!stopping) onChunk(floatToInt16(downsample(merged, inputRate, 16000, filterStates)));
     };
 
     const scheduleFlush = () => {
@@ -200,8 +201,8 @@ export async function startMicCapture(
     return {
       stop: async () => {
         if (chunkTimer !== null) clearTimeout(chunkTimer);
-        stopping = true;
         flush();
+        stopping = true;
         worklet.port.onmessage = null;
         worklet.disconnect();
         source.disconnect();
