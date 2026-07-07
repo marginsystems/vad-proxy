@@ -172,6 +172,10 @@ You must:
 2. Create an `AudioContext` (or `OfflineAudioContext`) at the capture rate.
 3. Downsample to **16 kHz** (e.g. `AudioWorklet`, linear interpolation, or
    `OfflineAudioContext` with `sampleRate: 16000`).
+
+Voice Lab and the browser demo apply a **low-pass Butterworth filter** before
+decimating to 16 kHz so sibilants above the output Nyquist limit do not alias
+into the speech band. See `frontend/src/lib/resample.ts`.
 4. Convert Float32 `[-1, 1]` → Int16 `[-32768, 32767]`.
 5. `btoa(String.fromCharCode(...new Uint8Array(pcm.buffer)))` or a proper
    base64 helper for large buffers.

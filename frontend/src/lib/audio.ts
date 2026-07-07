@@ -1,5 +1,9 @@
 /** Browser mic capture helpers: downsample to 16 kHz mono Int16 PCM. */
 
+import { downsample } from "./resample";
+
+export { downsample } from "./resample";
+
 /** Inline worklet — Blob URL avoids Firefox path/MIME issues with external modules. */
 const PCM_WORKLET_CODE = `
 class PcmCaptureProcessor extends AudioWorkletProcessor {
@@ -30,25 +34,6 @@ export function int16ToBase64(int16: Int16Array): string {
     binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 8192)));
   }
   return btoa(binary);
-}
-
-export function downsample(
-  buffer: Float32Array,
-  fromRate: number,
-  toRate: number,
-): Float32Array {
-  if (fromRate === toRate) return buffer;
-  const ratio = fromRate / toRate;
-  const outLen = Math.floor(buffer.length / ratio);
-  const out = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) {
-    const idx = i * ratio;
-    const i0 = Math.floor(idx);
-    const i1 = Math.min(i0 + 1, buffer.length - 1);
-    const frac = idx - i0;
-    out[i] = buffer[i0] * (1 - frac) + buffer[i1] * frac;
-  }
-  return out;
 }
 
 export type MicCapture = {
