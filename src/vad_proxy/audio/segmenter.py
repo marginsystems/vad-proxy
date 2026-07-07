@@ -287,11 +287,16 @@ class Segmenter:
             return None
         return self._pending_interim.popleft()
 
+    def _trim_trailing_silence(self) -> None:
+        while len(self._utterance) > 1 and not self._is_speech(self._utterance[-1]):
+            self._utterance.pop()
+
     def _end_utterance(self) -> Utterance:
+        self._trim_trailing_silence()
         self._stash_interim_tail()
         pcm = b"".join(self._utterance)
         start = max(0.0, self._utterance_start_chunk * self._secs_per_chunk)
-        end = (self._chunk_index + 1) * self._secs_per_chunk
+        end = (self._utterance_start_chunk + len(self._utterance)) * self._secs_per_chunk
         utterance = Utterance(
             pcm=pcm, sample_rate=self.sample_rate, start_secs=start, end_secs=end
         )

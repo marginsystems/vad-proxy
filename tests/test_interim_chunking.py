@@ -68,7 +68,10 @@ def test_smart_chunks_cover_utterance(model_available, chunking_speech_test_path
 
     utterance = utterances[0]
     covered = sum(s.end_secs - s.start_secs for s in slices)
-    assert abs(covered - utterance.duration_secs) < 0.15
+    # Interim slices emitted during STOPPING include trailing silence trimmed
+    # from the final utterance before paid STT.
+    assert covered >= utterance.duration_secs - 0.15
+    assert covered - utterance.duration_secs < params.stop_secs + CHUNK_TOLERANCE_SECS + 0.1
 
 
 def test_fixed_mode_still_works(model_available, test_audio_path):
