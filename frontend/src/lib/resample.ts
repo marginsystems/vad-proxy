@@ -48,6 +48,8 @@ export function applyBiquad(input: Float32Array, coeffs: BiquadCoeffs): Float32A
   return out;
 }
 
+const _coeffCache = new Map<string, BiquadCoeffs>();
+
 /** Low-pass then decimate/resample. Cutoff is set just below the output Nyquist limit. */
 export function lowpassForDownsample(
   buffer: Float32Array,
@@ -58,7 +60,12 @@ export function lowpassForDownsample(
   const nyquist = toRate / 2;
   const cutoff = Math.min(fromRate / 2, nyquist) * 0.95;
   let filtered = buffer;
-  const coeffs = lowpassBiquadCoeffs(fromRate, cutoff);
+  const key = `${fromRate}_${cutoff}`;
+  let coeffs = _coeffCache.get(key);
+  if (!coeffs) {
+    coeffs = lowpassBiquadCoeffs(fromRate, cutoff);
+    _coeffCache.set(key, coeffs);
+  }
   for (let s = 0; s < stages; s++) {
     filtered = applyBiquad(filtered, coeffs);
   }

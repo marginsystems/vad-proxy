@@ -158,7 +158,7 @@ export async function startMicCapture(
     const source = audioContext.createMediaStreamSource(stream);
     const worklet = new AudioWorkletNode(audioContext, "pcm-capture-processor");
     const inputRate = audioContext.sampleRate;
-    const pcmChunks: Int16Array[] = [];
+    const rawChunks: Float32Array[] = [];
     let stopping = false;
     let chunkTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -166,7 +166,7 @@ export async function startMicCapture(
       if (stopping) return;
       const samples = event.data;
       if (!samples?.length) return;
-      pcmChunks.push(floatToInt16(downsample(samples, inputRate, 16000)));
+      rawChunks.push(samples);
     };
 
     // Keep the worklet in the render graph (required for processing).
@@ -177,16 +177,16 @@ export async function startMicCapture(
     silent.connect(audioContext.destination);
 
     const flush = () => {
-      if (stopping || pcmChunks.length === 0) return;
-      const total = pcmChunks.reduce((n, c) => n + c.length, 0);
-      const merged = new Int16Array(total);
+      if (stopping || rawChunks.length === 0) return;
+      const total = rawChunks.reduce((n, c) => n + c.length, 0);
+      const merged = new Float32Array(total);
       let off = 0;
-      for (const c of pcmChunks) {
+      for (const c of rawChunks) {
         merged.set(c, off);
         off += c.length;
       }
-      pcmChunks.length = 0;
-      if (!stopping) onChunk(merged);
+      rawChunks.length = 0;
+      if (!stopping) onChunk(floatToInt16(downsample(merged, inputRate, 16000)));
     };
 
     const scheduleFlush = () => {
