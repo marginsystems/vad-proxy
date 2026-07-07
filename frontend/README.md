@@ -23,7 +23,15 @@ VAD_PROXY_INTERIM_ENABLED=true
 VAD_PROXY_DEBUG_INTERIM_CHUNKS=true
 ```
 
-## Quick start
+## Mic capture
+
+Browser clients downsample device-rate Float32 audio to **16 kHz mono Int16**
+before `appendAudio`. The resampler low-passes just below 8 kHz (output
+Nyquist) before decimation to avoid aliasing sibilants — see `src/lib/resample.ts`.
+
+```bash
+npm test   # resample unit tests
+```
 
 ```bash
 npm install

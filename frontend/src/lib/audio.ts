@@ -1,5 +1,9 @@
 /** Browser mic capture helpers: downsample to 16 kHz mono Int16 PCM. */
 
+import { downsample } from "./resample";
+
+export { downsample } from "./resample";
+
 /** Inline worklet — Blob URL avoids Firefox path/MIME issues with external modules. */
 const PCM_WORKLET_CODE = `
 class PcmCaptureProcessor extends AudioWorkletProcessor {
@@ -30,25 +34,6 @@ export function int16ToBase64(int16: Int16Array): string {
     binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 8192)));
   }
   return btoa(binary);
-}
-
-export function downsample(
-  buffer: Float32Array,
-  fromRate: number,
-  toRate: number,
-): Float32Array {
-  if (fromRate === toRate) return buffer;
-  const ratio = fromRate / toRate;
-  const outLen = Math.floor(buffer.length / ratio);
-  const out = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) {
-    const idx = i * ratio;
-    const i0 = Math.floor(idx);
-    const i1 = Math.min(i0 + 1, buffer.length - 1);
-    const frac = idx - i0;
-    out[i] = buffer[i0] * (1 - frac) + buffer[i1] * frac;
-  }
-  return out;
 }
 
 export type MicCapture = {
@@ -173,15 +158,16 @@ export async function startMicCapture(
     const source = audioContext.createMediaStreamSource(stream);
     const worklet = new AudioWorkletNode(audioContext, "pcm-capture-processor");
     const inputRate = audioContext.sampleRate;
-    const pcmChunks: Int16Array[] = [];
+    const rawChunks: Float32Array[] = [];
     let stopping = false;
     let chunkTimer: ReturnType<typeof setTimeout> | null = null;
+    const filterStates: { z1: number; z2: number }[] = [{ z1: 0, z2: 0 }, { z1: 0, z2: 0 }];
 
     worklet.port.onmessage = (event: MessageEvent<Float32Array>) => {
       if (stopping) return;
       const samples = event.data;
       if (!samples?.length) return;
-      pcmChunks.push(floatToInt16(downsample(samples, inputRate, 16000)));
+      rawChunks.push(samples);
     };
 
     // Keep the worklet in the render graph (required for processing).
@@ -192,16 +178,16 @@ export async function startMicCapture(
     silent.connect(audioContext.destination);
 
     const flush = () => {
-      if (stopping || pcmChunks.length === 0) return;
-      const total = pcmChunks.reduce((n, c) => n + c.length, 0);
-      const merged = new Int16Array(total);
+      if (stopping || rawChunks.length === 0) return;
+      const total = rawChunks.reduce((n, c) => n + c.length, 0);
+      const merged = new Float32Array(total);
       let off = 0;
-      for (const c of pcmChunks) {
+      for (const c of rawChunks) {
         merged.set(c, off);
         off += c.length;
       }
-      pcmChunks.length = 0;
-      if (!stopping) onChunk(merged);
+      rawChunks.length = 0;
+      if (!stopping) onChunk(floatToInt16(downsample(merged, inputRate, 16000, filterStates)));
     };
 
     const scheduleFlush = () => {
