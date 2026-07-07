@@ -68,6 +68,7 @@ def test_end_utterance_trims_trailing_silence(model_available, test_audio_path):
 
     silence_chunk = b"\x00\x00" * vad.chunk_size
     seg._utterance = [speech_chunk, silence_chunk, silence_chunk]
+    seg._utterance_speech = [True, False, False]
     seg._utterance_start_chunk = 5
     seg._chunk_index = 7
     seg._state = VadState.STOPPING
