@@ -53,6 +53,7 @@
     let chunkTimer = null;
     let stopping = false;
     const pcmChunks = [];
+    let inputRate = 0;
 
     const LISTEN_SUB = `subscription Listen {
       listen(sampleRate: 16000) {
@@ -173,12 +174,12 @@
 
       const source = audioContext.createMediaStreamSource(mediaStream);
       const worklet = new AudioWorkletNode(audioContext, "pcm-capture-processor");
-      const inputRate = audioContext.sampleRate;
+      inputRate = audioContext.sampleRate;
       worklet.port.onmessage = (e) => {
         if (stopping) return;
         const samples = e.data;
         if (!samples?.length) return;
-        pcmChunks.push(floatToInt16(downsample(samples, inputRate, 16000)));
+        pcmChunks.push(samples);
       };
       const silent = audioContext.createGain();
       silent.gain.value = 0;
@@ -192,7 +193,7 @@
     async function flushAudio() {
       if (!sessionId || !client || stopping || pcmChunks.length === 0) return;
       const total = pcmChunks.reduce((n, c) => n + c.length, 0);
-      const merged = new Int16Array(total);
+      const merged = new Float32Array(total);
       let off = 0;
       for (const c of pcmChunks) {
         merged.set(c, off);
@@ -200,7 +201,7 @@
       }
       if (stopping) return;
       pcmChunks.length = 0;
-      const b64 = int16ToBase64(merged);
+      const b64 = int16ToBase64(floatToInt16(downsample(merged, inputRate, 16000)));
       const { query, variables } = appendMutation(sessionId, b64);
       try {
         for await (const result of client.iterate({ query, variables })) {

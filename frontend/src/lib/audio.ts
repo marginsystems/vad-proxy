@@ -200,8 +200,8 @@ export async function startMicCapture(
     return {
       stop: async () => {
         if (chunkTimer !== null) clearTimeout(chunkTimer);
-        flush();
         stopping = true;
+        flush();
         worklet.port.onmessage = null;
         worklet.disconnect();
         source.disconnect();
