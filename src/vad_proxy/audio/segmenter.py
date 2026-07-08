@@ -110,6 +110,7 @@ class Segmenter:
         self._preroll: deque[bytes] = deque(maxlen=pre_roll_chunks)
 
         self._utterance: list[bytes] = []
+        self._utterance_speech: list[bool] = []
         self._utterance_start_chunk = 0
 
         self._interim_enabled = self.params.interim_chunk_secs > 0
@@ -171,6 +172,7 @@ class Segmenter:
 
         elif self._state == VadState.SPEAKING:
             self._utterance.append(chunk_pcm16)
+            self._utterance_speech.append(speaking)
             self._maybe_stash_interim_slices(chunk_pcm16)
             if not speaking:
                 self._state = VadState.STOPPING
@@ -180,6 +182,7 @@ class Segmenter:
 
         elif self._state == VadState.STOPPING:
             self._utterance.append(chunk_pcm16)
+            self._utterance_speech.append(speaking)
             self._maybe_stash_interim_slices(chunk_pcm16)
             if speaking:
                 self._state = VadState.SPEAKING
@@ -197,6 +200,7 @@ class Segmenter:
         self._state = VadState.SPEAKING
         # Seed with pre-roll so the leading audio is not clipped.
         self._utterance = list(self._preroll)
+        self._utterance_speech = [False] * len(self._utterance)
         self._utterance_start_chunk = self._chunk_index - len(self._preroll) + 1
         self._preroll.clear()
         self._starting_count = 0
@@ -287,16 +291,23 @@ class Segmenter:
             return None
         return self._pending_interim.popleft()
 
+    def _trim_trailing_silence(self) -> None:
+        while len(self._utterance) > 1 and not self._utterance_speech[-1]:
+            self._utterance.pop()
+            self._utterance_speech.pop()
+
     def _end_utterance(self) -> Utterance:
+        self._trim_trailing_silence()
         self._stash_interim_tail()
         pcm = b"".join(self._utterance)
         start = max(0.0, self._utterance_start_chunk * self._secs_per_chunk)
-        end = (self._chunk_index + 1) * self._secs_per_chunk
+        end = (self._utterance_start_chunk + len(self._utterance)) * self._secs_per_chunk
         utterance = Utterance(
             pcm=pcm, sample_rate=self.sample_rate, start_secs=start, end_secs=end
         )
         self._state = VadState.QUIET
         self._utterance = []
+        self._utterance_speech = []
         self._interim_cursor = 0
         self._stopping_count = 0
         self._preroll.clear()
@@ -315,6 +326,7 @@ class Segmenter:
         self._starting_count = 0
         self._stopping_count = 0
         self._utterance = []
+        self._utterance_speech = []
         self._interim_cursor = 0
         self._pending_interim.clear()
         self._preroll.clear()
