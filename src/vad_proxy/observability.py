@@ -80,7 +80,7 @@ class Timer:
         self._start = time.perf_counter()
         return self
 
-    async def __aexit__(self, exc_type: type[BaseException] | None, *_: object) -> None:
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
         self.elapsed_ms = (time.perf_counter() - self._start) * 1000.0
         if exc_type is None:
             self._stats.record(self.elapsed_ms)

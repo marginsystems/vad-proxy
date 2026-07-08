@@ -326,6 +326,7 @@ class VadProxyPipeline:
                     stt_backend = transcript.backend
                     turn_confidence = transcript.confidence
                 except SttUnavailable as exc:
+                    stt_ms = stt_timer.elapsed_ms
                     metrics.stt_final.record_error()
                     await self.c.output.send_error(str(exc), fatal=False)
                     raw_text = self.c.personalizer.bias_vocabulary(joined_text)
