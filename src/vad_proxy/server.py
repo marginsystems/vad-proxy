@@ -27,6 +27,7 @@ from vad_proxy.config import Settings, load_settings
 from vad_proxy.graphql.schema import schema
 from vad_proxy.graphql.session import SessionManager
 from vad_proxy.logging_setup import configure_logging
+from vad_proxy.observability import metrics
 
 _LOCALHOST_ORIGIN_PREFIXES = ("http://localhost", "http://127.0.0.1")
 
@@ -162,6 +163,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "max_sessions": settings.max_sessions,
             "active_sessions": session_manager.active_sessions,
             "vad_model_loaded": True,
+            "metrics": metrics.snapshot(
+                queue_depths=session_manager.queue_snapshot()
+            ),
         }
 
     @app.websocket("/ws")

@@ -25,12 +25,14 @@ from vad_proxy.output.base import FinalText, InterimChunkRecord, OutputAdapter
 from vad_proxy.output.factory import build_output
 from vad_proxy.personalization.base import Personalizer
 from vad_proxy.personalization.factory import build_personalizer
+from vad_proxy.observability import Timer, metrics
 from vad_proxy.stt.base import SttBackend, Transcript
 from vad_proxy.stt.factory import build_stt
 from vad_proxy.stt.retry import SttUnavailable
 
 _log = logging.getLogger(__name__)
 _transcript_log = logging.getLogger("vad_proxy.transcript")
+_ops_log = logging.getLogger("vad_proxy.ops")
 
 _INTERIM_STT_MAX_IN_FLIGHT = 2
 
@@ -217,11 +219,14 @@ class VadProxyPipeline:
         try:
             if pending.epoch != self._turn_epoch:
                 return
+            metrics.interim_slices += 1
             try:
-                transcript = await self.c.stt.transcribe(
-                    pending.slice.pcm, self.settings.sample_rate
-                )
+                async with Timer(metrics.stt_interim):
+                    transcript = await self.c.stt.transcribe(
+                        pending.slice.pcm, self.settings.sample_rate
+                    )
             except SttUnavailable as exc:
+                metrics.stt_interim.record_error()
                 await self.c.output.send_error(str(exc), fatal=False)
                 await self._store_interim_result(
                     pending.slice_index,
@@ -307,16 +312,22 @@ class VadProxyPipeline:
         self, utterance: Utterance, joined_text: str, debug_chunks: list[InterimChunkRecord]
     ) -> None:
         try:
+            metrics.utterances += 1
             turn_confidence: float | None = None
+            stt_ms = 0.0
             if self.settings.interim_enabled:
                 try:
-                    transcript = await self.c.stt.transcribe(
-                        utterance.pcm, utterance.sample_rate
-                    )
+                    async with Timer(metrics.stt_final) as stt_timer:
+                        transcript = await self.c.stt.transcribe(
+                            utterance.pcm, utterance.sample_rate
+                        )
+                    stt_ms = stt_timer.elapsed_ms
                     raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
                     stt_backend = transcript.backend
                     turn_confidence = transcript.confidence
                 except SttUnavailable as exc:
+                    stt_ms = stt_timer.elapsed_ms
+                    metrics.stt_final.record_error()
                     await self.c.output.send_error(str(exc), fatal=False)
                     raw_text = self.c.personalizer.bias_vocabulary(joined_text)
                     stt_backend = self.c.stt.name
@@ -327,10 +338,13 @@ class VadProxyPipeline:
                     return
             else:
                 try:
-                    transcript = await self.c.stt.transcribe(
-                        utterance.pcm, utterance.sample_rate
-                    )
+                    async with Timer(metrics.stt_final) as stt_timer:
+                        transcript = await self.c.stt.transcribe(
+                            utterance.pcm, utterance.sample_rate
+                        )
+                    stt_ms = stt_timer.elapsed_ms
                 except SttUnavailable as exc:
+                    metrics.stt_final.record_error()
                     await self.c.output.send_error(str(exc), fatal=False)
                     return
                 raw_text = self.c.personalizer.bias_vocabulary(transcript.text)
@@ -338,7 +352,13 @@ class VadProxyPipeline:
                 if not raw_text.strip():
                     return
 
-            result = await self.c.smart.process(raw_text)
+            try:
+                async with Timer(metrics.llm) as llm_timer:
+                    result = await self.c.smart.process(raw_text)
+                llm_ms = llm_timer.elapsed_ms
+            except Exception:
+                metrics.llm.record_error()
+                raise
 
             final = FinalText(
                 text=result.text,
@@ -368,6 +388,13 @@ class VadProxyPipeline:
                 final.end_secs,
                 final.text,
                 "" if final.turn_complete else " [partial]",
+            )
+            _ops_log.info(
+                "turn stt_final=%.0fms llm=%.0fms utterance=%.1f-%.1fs",
+                stt_ms,
+                llm_ms,
+                final.start_secs,
+                final.end_secs,
             )
 
             await self.c.output.send(final)

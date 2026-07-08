@@ -21,6 +21,7 @@ from typing import AsyncIterator, Literal
 from vad_proxy.audio.decode import pcm16_to_wav
 from vad_proxy.config import Settings
 from vad_proxy.audio.vad import SharedSileroVadModel
+from vad_proxy.observability import metrics
 from vad_proxy.output.base import FinalText, InterimChunkRecord, OutputAdapter
 from vad_proxy.pipeline import VadProxyPipeline, build_pipeline
 
@@ -87,6 +88,7 @@ class QueueOutputAdapter(OutputAdapter):
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
+            metrics.event_queue_pressure += 1
             _log.warning(
                 "required event (%s) queue full (%s/%s); draining one item to deliver",
                 event.kind,
@@ -106,6 +108,7 @@ class QueueOutputAdapter(OutputAdapter):
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
+            metrics.event_queue_dropped += 1
             return False
         return True
 
@@ -246,6 +249,14 @@ class Session:
             self._consume(), name=f"vad-session-{session_id}"
         )
 
+    @property
+    def input_queue_depth(self) -> int:
+        return self._input_queue.qsize()
+
+    @property
+    def event_queue_depth(self) -> int:
+        return self._event_queue.qsize()
+
     async def _consume(self) -> None:
         try:
             while True:
@@ -290,6 +301,7 @@ class Session:
         try:
             self._input_queue.put_nowait(item)
         except asyncio.QueueFull as exc:
+            metrics.input_queue_full += 1
             raise ValueError(
                 f"session {self.session_id} audio buffer full, retry"
             ) from exc
@@ -341,6 +353,26 @@ class SessionManager:
     @property
     def active_sessions(self) -> int:
         return len(self._sessions)
+
+    def queue_snapshot(self) -> dict[str, int]:
+        input_max = 0
+        event_max = 0
+        pressure = 0
+        pressure_threshold = int(_INPUT_QUEUE_MAX * 0.75)
+        for session in self._sessions.values():
+            in_depth = session.input_queue_depth
+            ev_depth = session.event_queue_depth
+            if in_depth > input_max:
+                input_max = in_depth
+            if ev_depth > event_max:
+                event_max = ev_depth
+            if in_depth > pressure_threshold:
+                pressure += 1
+        return {
+            "input_queue_max_depth": input_max,
+            "event_queue_max_depth": event_max,
+            "sessions_with_input_pressure": pressure,
+        }
 
     def create_session(self, sample_rate: int | None = None) -> Session:
         if sample_rate is not None and sample_rate != self.settings.sample_rate:
