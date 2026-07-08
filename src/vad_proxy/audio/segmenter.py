@@ -374,6 +374,7 @@ class Segmenter:
         self._utterance = self._utterance[:split_at]
         self._utterance_speech = self._utterance_speech[:split_at]
         self._utterance_rms = self._utterance_rms[:split_at]
+        self._pending_interim.clear()
         utterance = self._build_current_utterance()
 
         self._utterance_epoch += 1
@@ -383,7 +384,6 @@ class Segmenter:
         self._utterance_rms = suffix_rms
         self._utterance_start_chunk = suffix_start_chunk
         self._interim_cursor = 0
-        self._pending_interim.clear()
         if self._interim_chunker is not None:
             self._interim_chunker.reset()
         self._stopping_count = 0
