@@ -81,6 +81,10 @@ def _rms_volume(chunk_float32: np.ndarray) -> float:
     return float(np.sqrt(np.mean(chunk_float32**2)))
 
 
+_MAX_SPLIT_LOOKBACK_SECS = 2.0
+_MIN_SPLIT_PART_SECS = 1.0
+
+
 class Segmenter:
     """Stateful VAD endpointer that yields :class:`Utterance` objects.
 
@@ -111,6 +115,7 @@ class Segmenter:
 
         self._utterance: list[bytes] = []
         self._utterance_speech: list[bool] = []
+        self._utterance_rms: list[float] = []
         self._utterance_start_chunk = 0
 
         self._interim_enabled = self.params.interim_chunk_secs > 0
@@ -143,6 +148,10 @@ class Segmenter:
         """Increments each time a new in-progress utterance begins."""
         return self._utterance_epoch
 
+    def _chunk_rms(self, chunk_pcm16: bytes) -> float:
+        audio_float32 = np.frombuffer(chunk_pcm16, dtype=np.int16).astype(np.float32) / 32768.0
+        return _rms_volume(audio_float32)
+
     def _is_speech(self, chunk_pcm16: bytes) -> bool:
         confidence = self.vad.confidence(chunk_pcm16)
         audio_float32 = np.frombuffer(chunk_pcm16, dtype=np.int16).astype(np.float32) / 32768.0
@@ -171,18 +180,27 @@ class Segmenter:
                 self._starting_count = 0
 
         elif self._state == VadState.SPEAKING:
+            chunk_rms = self._chunk_rms(chunk_pcm16)
             self._utterance.append(chunk_pcm16)
             self._utterance_speech.append(speaking)
+            self._utterance_rms.append(chunk_rms)
             self._maybe_stash_interim_slices(chunk_pcm16)
             if not speaking:
                 self._state = VadState.STOPPING
                 self._stopping_count = 1
             elif len(self._utterance) >= self._max_chunks:
-                result = self._end_utterance()
+                split_at = self._find_soft_max_split()
+                min_part = max(1, round(_MIN_SPLIT_PART_SECS / self._secs_per_chunk))
+                min_part = min(min_part, max(1, self._max_chunks // 3))
+                if min_part <= split_at < len(self._utterance):
+                    result = self._emit_prefix_utterance(split_at)
+                else:
+                    result = self._end_utterance()
 
         elif self._state == VadState.STOPPING:
             self._utterance.append(chunk_pcm16)
             self._utterance_speech.append(speaking)
+            self._utterance_rms.append(self._chunk_rms(chunk_pcm16))
             self._maybe_stash_interim_slices(chunk_pcm16)
             if speaking:
                 self._state = VadState.SPEAKING
@@ -201,6 +219,7 @@ class Segmenter:
         # Seed with pre-roll so the leading audio is not clipped.
         self._utterance = list(self._preroll)
         self._utterance_speech = [False] * len(self._utterance)
+        self._utterance_rms = [self._chunk_rms(chunk) for chunk in self._utterance]
         self._utterance_start_chunk = self._chunk_index - len(self._preroll) + 1
         self._preroll.clear()
         self._starting_count = 0
@@ -281,8 +300,9 @@ class Segmenter:
         if not self._interim_enabled:
             return
         total = self._utterance_byte_len()
-        if total > self._interim_cursor:
-            self._stash_slice(self._interim_cursor, total, reason="tail")
+        cursor = min(self._interim_cursor, total)
+        if total > cursor:
+            self._stash_slice(cursor, total, reason="tail")
             self._interim_cursor = total
 
     def drain_interim(self) -> InterimSlice | None:
@@ -295,19 +315,86 @@ class Segmenter:
         while len(self._utterance) > 1 and not self._utterance_speech[-1]:
             self._utterance.pop()
             self._utterance_speech.pop()
+            self._utterance_rms.pop()
 
-    def _end_utterance(self) -> Utterance:
+    def _find_soft_max_split(self) -> int:
+        """Return exclusive end index for a prefix when max_utterance_secs is hit."""
+        n = len(self._utterance)
+        min_part = max(1, round(_MIN_SPLIT_PART_SECS / self._secs_per_chunk))
+        min_part = min(min_part, max(1, self._max_chunks // 3))
+        lookback = max(1, round(_MAX_SPLIT_LOOKBACK_SECS / self._secs_per_chunk))
+        search_start = max(min_part, n - lookback)
+        fallback = n - min_part
+        if fallback <= min_part:
+            return max(min_part, n // 2)
+
+        for i in range(n - min_part, search_start - 1, -1):
+            if i > 0 and not self._utterance_speech[i - 1]:
+                return i
+
+        window = self._utterance_rms[search_start:fallback]
+        if window:
+            peak = max(window)
+            if peak > 0.0:
+                ratio = self.params.interim_dip_ratio
+                best_i = fallback
+                best_rms = float("inf")
+                for i in range(search_start + 1, fallback + 1):
+                    rms = self._utterance_rms[i - 1]
+                    if rms < peak * ratio and rms < best_rms:
+                        best_rms = rms
+                        best_i = i
+                if best_i < fallback:
+                    return best_i
+                for i in range(search_start + 1, fallback + 1):
+                    rms = self._utterance_rms[i - 1]
+                    if rms < best_rms:
+                        best_rms = rms
+                        best_i = i
+                if best_i < fallback:
+                    return best_i
+
+        return fallback
+
+    def _build_current_utterance(self) -> Utterance:
         self._trim_trailing_silence()
         self._stash_interim_tail()
         pcm = b"".join(self._utterance)
         start = max(0.0, self._utterance_start_chunk * self._secs_per_chunk)
         end = (self._utterance_start_chunk + len(self._utterance)) * self._secs_per_chunk
-        utterance = Utterance(
+        return Utterance(
             pcm=pcm, sample_rate=self.sample_rate, start_secs=start, end_secs=end
         )
+
+    def _emit_prefix_utterance(self, split_at: int) -> Utterance:
+        suffix_utterance = self._utterance[split_at:]
+        suffix_speech = self._utterance_speech[split_at:]
+        suffix_rms = self._utterance_rms[split_at:]
+        suffix_start_chunk = self._utterance_start_chunk + split_at
+
+        self._utterance = self._utterance[:split_at]
+        self._utterance_speech = self._utterance_speech[:split_at]
+        self._utterance_rms = self._utterance_rms[:split_at]
+        utterance = self._build_current_utterance()
+
+        self._utterance_epoch += 1
+        self._state = VadState.SPEAKING
+        self._utterance = suffix_utterance
+        self._utterance_speech = suffix_speech
+        self._utterance_rms = suffix_rms
+        self._utterance_start_chunk = suffix_start_chunk
+        self._interim_cursor = 0
+        if self._interim_chunker is not None:
+            self._interim_chunker.reset()
+        self._stopping_count = 0
+        return utterance
+
+    def _end_utterance(self) -> Utterance:
+        utterance = self._build_current_utterance()
         self._state = VadState.QUIET
         self._utterance = []
         self._utterance_speech = []
+        self._utterance_rms = []
         self._interim_cursor = 0
         self._stopping_count = 0
         self._preroll.clear()
@@ -327,6 +414,7 @@ class Segmenter:
         self._stopping_count = 0
         self._utterance = []
         self._utterance_speech = []
+        self._utterance_rms = []
         self._interim_cursor = 0
         self._pending_interim.clear()
         self._preroll.clear()
