@@ -300,8 +300,9 @@ class Segmenter:
         if not self._interim_enabled:
             return
         total = self._utterance_byte_len()
-        if total > self._interim_cursor:
-            self._stash_slice(self._interim_cursor, total, reason="tail")
+        cursor = min(self._interim_cursor, total)
+        if total > cursor:
+            self._stash_slice(cursor, total, reason="tail")
             self._interim_cursor = total
 
     def drain_interim(self) -> InterimSlice | None:
@@ -374,7 +375,6 @@ class Segmenter:
         self._utterance = self._utterance[:split_at]
         self._utterance_speech = self._utterance_speech[:split_at]
         self._utterance_rms = self._utterance_rms[:split_at]
-        self._pending_interim.clear()
         utterance = self._build_current_utterance()
 
         self._utterance_epoch += 1
