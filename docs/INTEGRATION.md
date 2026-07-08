@@ -249,4 +249,18 @@ curl https://voice.biosystems.dev/health
 
 Returns JSON including `sample_rate`, `stt_backend`, `allowed_origins`,
 `voice_api_key_required` (whether clients must send `connectionParams.apiKey`),
-`max_sessions`, and `active_sessions`.
+`max_sessions`, `active_sessions`, and a `metrics` object with process-wide
+pipeline stats:
+
+| Field | Meaning |
+|-------|---------|
+| `utterances` / `interim_slices` | Counters since process start |
+| `stt_final` / `stt_interim` / `llm` | `{count, errors, last_ms, avg_ms}` latency |
+| `backpressure.input_queue_full` | Times `appendAudio` hit the 128-item input cap |
+| `backpressure.event_queue_dropped` | Best-effort events (interim / chunk_debug) dropped |
+| `backpressure.event_queue_pressure` | Required events that forced a drain |
+| `backpressure.input_queue_max_depth` | Highest input queue depth across live sessions |
+| `backpressure.event_queue_max_depth` | Highest event queue depth across live sessions |
+
+Final turns also emit one `vad_proxy.ops` INFO log line:
+`turn stt_final=…ms llm=…ms utterance=…s`.
