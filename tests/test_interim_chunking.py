@@ -67,11 +67,12 @@ def test_smart_chunks_cover_utterance(model_available, chunking_speech_test_path
         pytest.skip("VAD did not detect speech for chunking integration on this host")
 
     utterance = utterances[0]
+    total_duration = sum(u.duration_secs for u in utterances)
     covered = sum(s.end_secs - s.start_secs for s in slices)
     # Interim slices emitted during STOPPING include trailing silence trimmed
     # from the final utterance before paid STT.
-    assert covered >= utterance.duration_secs - 0.15
-    assert covered - utterance.duration_secs < params.stop_secs + CHUNK_TOLERANCE_SECS + 0.1
+    assert covered >= total_duration - 0.15
+    assert covered - total_duration < params.stop_secs + CHUNK_TOLERANCE_SECS + 0.1
 
 
 def test_fixed_mode_still_works(model_available, test_audio_path):

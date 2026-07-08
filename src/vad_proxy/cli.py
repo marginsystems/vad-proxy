@@ -2,7 +2,7 @@
 
 Subcommands:
   transcribe <file>   Decode an audio file and run it through the pipeline.
-  serve               Start the WebSocket listener.
+  serve               Start the GraphQL voice server.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     p_tr.add_argument("file", help="Path to an audio file (mp3, wav, m4a, ...)")
     p_tr.add_argument("--sample-rate", type=int, default=16000, choices=(8000, 16000))
 
-    sub.add_parser("serve", help="Run the WebSocket listener")
+    sub.add_parser("serve", help="Run the GraphQL voice server")
 
     args = parser.parse_args(argv)
 

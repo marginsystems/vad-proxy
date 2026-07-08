@@ -1,13 +1,10 @@
-"""FastAPI WebSocket server: the 24/7 listener.
+"""FastAPI server: GraphQL voice API and health.
 
-Clients stream raw mono signed-16-bit PCM at the configured sample rate over a
-WebSocket. Each binary message is fed into a per-connection pipeline; completed
-utterances are transcribed, refined, and proxied by the configured output
-adapter. A text message ``"flush"`` forces any in-progress utterance out.
+Clients stream mono signed-16-bit PCM via the GraphQL WebSocket at ``/graphql``
+(``graphql-transport-ws``): base64 chunks in ``appendAudio``, transcripts on
+``listen``. Legacy raw PCM ``/ws`` is deprecated and closes immediately.
 
-GraphQL-over-WebSocket (``graphql-transport-ws``) is also exposed at ``/graphql``
-for origin-restricted voice streaming with base64 PCM chunks and transcript
-subscriptions.
+Health is exposed at ``/health``.
 """
 
 from __future__ import annotations
@@ -18,7 +15,7 @@ from urllib.parse import urlparse
 
 _log = logging.getLogger(__name__)
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from strawberry.exceptions import ConnectionRejectionError
 from strawberry.fastapi import GraphQLRouter
@@ -30,7 +27,6 @@ from vad_proxy.config import Settings, load_settings
 from vad_proxy.graphql.schema import schema
 from vad_proxy.graphql.session import SessionManager
 from vad_proxy.logging_setup import configure_logging
-from vad_proxy.pipeline import build_pipeline
 
 _LOCALHOST_ORIGIN_PREFIXES = ("http://localhost", "http://127.0.0.1")
 
@@ -98,18 +94,8 @@ def _voice_connect_ok(
     return _api_key_ok(settings, connection_params)
 
 
-def _ws_api_key_ok(settings: Settings, websocket: WebSocket) -> bool:
-    if not settings.voice_api_key:
-        return True
-    query_key = websocket.query_params.get("apiKey")
-    if query_key == settings.voice_api_key:
-        return True
-    auth = websocket.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
-        token = auth[7:].strip()
-        if token == settings.voice_api_key:
-            return True
-    return False
+_LEGACY_WS_CLOSE_CODE = 1008
+_LEGACY_WS_CLOSE_REASON = "Legacy /ws deprecated; use /graphql"
 
 
 class OriginGraphQLRouter(GraphQLRouter):
@@ -181,25 +167,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
         await websocket.accept()
-        if not _ws_api_key_ok(settings, websocket):
-            await websocket.close(code=4403)
-            return
-        pipeline = build_pipeline(settings, vad=vad_model.create_stream())
-        try:
-            while True:
-                message = await websocket.receive()
-                if message["type"] == "websocket.disconnect":
-                    break
-                if message.get("bytes") is not None:
-                    await pipeline.feed(message["bytes"])
-                elif message.get("text") is not None:
-                    if message["text"].strip().lower() == "flush":
-                        await pipeline.finish()
-        except WebSocketDisconnect:
-            pass
-        finally:
-            await pipeline.finish()
-            await pipeline.aclose()
+        await websocket.send_text(
+            "deprecated: use /graphql (see docs/INTEGRATION.md)"
+        )
+        await websocket.close(code=_LEGACY_WS_CLOSE_CODE, reason=_LEGACY_WS_CLOSE_REASON)
 
     return app
 

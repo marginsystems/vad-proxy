@@ -29,7 +29,7 @@ The DeepSeek smart-layer is **not** a chatbot in Voice Lab — it cleans up STT 
 - DeepSeek smart-layer: transcript correction + turn detection
 - Live interim transcripts with smart word-boundary chunking
 - Chunk debug replay in Voice Lab (`VAD_PROXY_DEBUG_INTERIM_CHUNKS`)
-- GraphQL WebSocket API for browsers; legacy raw `/ws` for scripts
+- GraphQL WebSocket API for browsers and scripts (see [docs/INTEGRATION.md](docs/INTEGRATION.md))
 - Docker + Voice Lab for zero-friction local testing
 
 ## Quick start
@@ -123,7 +123,6 @@ docker compose up --build -d
 ```
 
 - **GraphQL WebSocket:** `ws://localhost:8080/graphql` (localhost origins always allowed)
-- **WebSocket (legacy):** `ws://localhost:8080/ws`
 - **Health:** `http://localhost:8080/health`
 - **Logs:** `logs/vad-proxy.log` on the host (bind-mounted from `/app/logs`)
 - **Data:** `data/` on the host (utterance logging, if enabled)

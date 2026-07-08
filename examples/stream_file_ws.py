@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Stream an audio file to a running vad-proxy WebSocket server.
+"""DEPRECATED: stream an audio file to the legacy /ws endpoint.
 
-Mimics a live microphone client: decodes the file to 16 kHz mono PCM and sends
-it in ~20 ms binary frames, then sends a final "flush" so any trailing
-utterance is emitted.
+This script targeted the removed raw PCM WebSocket at ``/ws``. Use the GraphQL
+API at ``/graphql`` instead (see docs/INTEGRATION.md and examples/browser-voice/).
 
-Usage:
+Usage (legacy endpoint closes immediately with deprecation):
     python examples/stream_file_ws.py path/to/audio.mp3 --url ws://localhost:8080/ws
 """
 
@@ -33,7 +32,7 @@ async def stream(path: str, url: str, sample_rate: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("file")
-    parser.add_argument("--url", default="ws://localhost:8080/ws")
+    parser.add_argument("--url", default="ws://localhost:8080/ws")  # deprecated; use /graphql
     parser.add_argument("--sample-rate", type=int, default=16000, choices=(8000, 16000))
     args = parser.parse_args()
     asyncio.run(stream(args.file, args.url, args.sample_rate))

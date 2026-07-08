@@ -51,8 +51,9 @@ If the origin is not allowed or the API key is missing/invalid when required,
 the server closes the socket with code **4403 Forbidden** before any
 subscription starts.
 
-Legacy `/ws` (binary PCM) accepts the same secret via `?apiKey=` or
-`Authorization: Bearer <key>` when `VAD_PROXY_VOICE_API_KEY` is set.
+> **Note:** The legacy raw PCM endpoint `/ws` is **deprecated**. New integrations
+> should use `/graphql` only. Connections to `/ws` receive a deprecation message
+> and close with code **1008**.
 
 ### Session limits
 
