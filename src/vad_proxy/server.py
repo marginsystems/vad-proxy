@@ -17,6 +17,7 @@ _log = logging.getLogger(__name__)
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import PlainTextResponse
 from strawberry.exceptions import ConnectionRejectionError
 from strawberry.fastapi import GraphQLRouter
 from strawberry.http.typevars import Context
@@ -98,13 +99,24 @@ def _voice_connect_ok(
 _LEGACY_WS_CLOSE_CODE = 1008
 _LEGACY_WS_CLOSE_REASON = "Legacy /ws deprecated; use /graphql"
 
+_GRAPHQL_HTTP_DISABLED = (
+    "GraphQL over HTTP is disabled; use graphql-transport-ws at /graphql"
+)
+
 
 class OriginGraphQLRouter(GraphQLRouter):
-    """GraphQL router that validates Origin and optional voice API key on connect."""
+    """GraphQL router: WS-only transport with Origin + optional voice API key."""
 
     def __init__(self, settings: Settings, *args: Any, **kwargs: Any) -> None:
         self._settings = settings
         super().__init__(*args, **kwargs)
+
+    async def run(self, request: Any, *args: Any, **kwargs: Any) -> Any:
+        # Strawberry registers HTTP GET/POST on the same path; reject them so
+        # API-key checks on WebSocket connect cannot be bypassed via curl/HTTP.
+        if getattr(request, "scope", {}).get("type") == "http":
+            return PlainTextResponse(_GRAPHQL_HTTP_DISABLED, status_code=405)
+        return await super().run(request, *args, **kwargs)
 
     async def on_ws_connect(self, context: Context) -> Any:
         request = None
@@ -145,6 +157,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         schema,
         context_getter=graphql_context,
         graphql_ide=None,
+        allow_queries_via_get=False,
     )
     app.include_router(graphql_router, prefix="/graphql")
 

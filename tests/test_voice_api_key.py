@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import subprocess
@@ -14,9 +15,15 @@ from pathlib import Path
 
 import pytest
 import websockets
+from starlette.testclient import TestClient
 
 from vad_proxy.config import load_settings
-from vad_proxy.server import _api_key_ok, _voice_connect_ok
+from vad_proxy.server import (
+    _GRAPHQL_HTTP_DISABLED,
+    _api_key_ok,
+    _voice_connect_ok,
+    create_app,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = REPO_ROOT / "models" / "silero_vad.onnx"
@@ -259,3 +266,46 @@ def test_graphql_ws_rejects_script_without_key():
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+@pytest.mark.skipif(not MODEL_PATH.exists(), reason="Silero model not downloaded")
+def test_graphql_http_disabled_when_api_key_required():
+    """HTTP /graphql must not execute — closes TD-01 auth bypass (#26)."""
+    settings = load_settings(
+        voice_api_key="secret",
+        allowed_origins="https://biosystems.dev",
+        stt_backend="mock",
+        llm_enabled=False,
+    )
+    client = TestClient(create_app(settings))
+    fake_id = "11111111-1111-4111-8111-111111111111"
+    pcm = base64.b64encode(b"\x00\x00" * 160).decode()
+
+    cases = [
+        client.post("/graphql", json={"query": "{ voiceApiReady }"}),
+        client.post(
+            "/graphql",
+            json={
+                "query": (
+                    "mutation($id: ID!, $a: String!) {"
+                    "  appendAudio(sessionId: $id, audioBase64: $a)"
+                    "}"
+                ),
+                "variables": {"id": fake_id, "a": pcm},
+            },
+            headers={"Origin": "https://evil.example"},
+        ),
+        client.post(
+            "/graphql",
+            json={
+                "query": "mutation($id: ID!) { stopSession(sessionId: $id) }",
+                "variables": {"id": fake_id},
+            },
+        ),
+        client.get("/graphql", params={"query": "{ voiceApiReady }"}),
+    ]
+    for resp in cases:
+        assert resp.status_code == 405
+        assert _GRAPHQL_HTTP_DISABLED in resp.text
+        assert "voiceApiReady" not in resp.text
+        assert "data" not in resp.text

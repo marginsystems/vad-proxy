@@ -14,6 +14,11 @@ transcripts.
 Protocol: **`graphql-transport-ws`** (the modern subprotocol used by the npm
 [`graphql-ws`](https://github.com/enisdenjo/graphql-ws) client).
 
+**WebSocket only.** HTTP `GET`/`POST` to `/graphql` are not supported and return
+**405 Method Not Allowed**. Clients must use the WebSocket transport above;
+plain GraphQL-over-HTTP is disabled so access control cannot be bypassed outside
+the `connectionParams` / Origin checks on connect.
+
 ## Access control
 
 Browser clients are allowed when their `Origin` header matches an entry in
