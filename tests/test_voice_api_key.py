@@ -309,3 +309,20 @@ def test_graphql_http_disabled_when_api_key_required():
         assert _GRAPHQL_HTTP_DISABLED in resp.text
         assert "voiceApiReady" not in resp.text
         assert "data" not in resp.text
+
+
+@pytest.mark.skipif(not MODEL_PATH.exists(), reason="Silero model not downloaded")
+def test_graphql_http_disabled_without_api_key():
+    """HTTP /graphql must still return 405 when no voice_api_key is set."""
+    settings = load_settings(
+        voice_api_key="",
+        allowed_origins="https://biosystems.dev",
+        stt_backend="mock",
+        llm_enabled=False,
+    )
+    client = TestClient(create_app(settings))
+    resp = client.post("/graphql", json={"query": "{ voiceApiReady }"})
+    assert resp.status_code == 405
+    assert _GRAPHQL_HTTP_DISABLED in resp.text
+    assert "voiceApiReady" not in resp.text
+    assert "data" not in resp.text
