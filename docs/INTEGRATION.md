@@ -32,9 +32,13 @@ Configure allowed origins in `.env`:
 VAD_PROXY_ALLOWED_ORIGINS=https://biosystems.dev
 ```
 
-When `VAD_PROXY_VOICE_API_KEY` is set, clients connecting from **non-localhost**
-origins (or without an `Origin` header, e.g. scripts) must pass the same value
-in GraphQL `connectionParams`:
+When `VAD_PROXY_VOICE_API_KEY` is set, **every** client must pass the same value
+in GraphQL `connectionParams` — including localhost Voice Lab and scripts.
+`Origin` is never treated as authentication (it is spoofable outside browsers).
+
+For key-free local Voice Lab, leave `VAD_PROXY_VOICE_API_KEY` unset. If the
+server key is set, pass it via `connectionParams.apiKey` (Voice Lab:
+`VITE_VOICE_API_KEY`).
 
 ```js
 import { createClient } from "graphql-ws";
@@ -48,7 +52,7 @@ const client = createClient({
 | `VAD_PROXY_VOICE_API_KEY` | Origin | API key required |
 |---------------------------|--------|------------------|
 | unset | any | No (dev default) |
-| set | localhost / 127.0.0.1 | No (Voice Lab local dev) |
+| set | localhost / 127.0.0.1 | Yes (`connectionParams.apiKey`) |
 | set | allowed production origin | Yes (`connectionParams.apiKey`) |
 | set | missing (scripts) | Yes (`connectionParams.apiKey`) |
 

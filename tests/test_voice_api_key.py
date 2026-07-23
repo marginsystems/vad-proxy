@@ -100,8 +100,12 @@ def test_voice_connect_ok_unit():
         voice_api_key="secret",
         allowed_origins="https://biosystems.dev",
     )
-    assert _voice_connect_ok(settings, "http://localhost:5173", None)
-    assert _voice_connect_ok(settings, "http://127.0.0.1:8080", None)
+    # Localhost Origin must not exempt the key (TD-02 / #28).
+    assert not _voice_connect_ok(settings, "http://localhost:5173", None)
+    assert not _voice_connect_ok(settings, "http://127.0.0.1:8080", None)
+    assert _voice_connect_ok(
+        settings, "http://localhost:5173", {"apiKey": "secret"}
+    )
     assert _voice_connect_ok(
         settings, "https://biosystems.dev", {"apiKey": "secret"}
     )
@@ -114,10 +118,12 @@ def test_voice_connect_ok_unit():
 
     unset = load_settings(voice_api_key="", allowed_origins="https://biosystems.dev")
     assert _voice_connect_ok(unset, None, None)
+    assert _voice_connect_ok(unset, "http://localhost:5173", None)
 
 
 @pytest.mark.skipif(not MODEL_PATH.exists(), reason="Silero model not downloaded")
-def test_graphql_ws_localhost_exempt_without_key():
+def test_graphql_ws_rejects_localhost_origin_without_key():
+    """Spoofable localhost Origin must not bypass the API key (TD-02 / #28)."""
     port = 18082
     env = {
         **os.environ,
@@ -145,8 +151,48 @@ def test_graphql_ws_localhost_exempt_without_key():
         assert health["voice_api_key_required"] is True
 
         ws_url = f"ws://127.0.0.1:{port}/graphql"
+        asyncio.run(
+            _expect_rejected(ws_url, origin="http://127.0.0.1:5173")
+        )
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+@pytest.mark.skipif(not MODEL_PATH.exists(), reason="Silero model not downloaded")
+def test_graphql_ws_accepts_localhost_origin_with_key():
+    port = 18086
+    env = {
+        **os.environ,
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "VAD_PROXY_PORT": str(port),
+        "VAD_PROXY_STT_BACKEND": "mock",
+        "VAD_PROXY_LLM_ENABLED": "false",
+        "VAD_PROXY_VOICE_API_KEY": "secret",
+        "VAD_PROXY_ALLOWED_ORIGINS": "https://biosystems.dev",
+    }
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "vad_proxy.server"],
+        cwd=str(REPO_ROOT),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        _wait_for_health(port)
+        ws_url = f"ws://127.0.0.1:{port}/graphql"
         msg = asyncio.run(
-            _connection_init(ws_url, origin="http://127.0.0.1:5173")
+            _connection_init(
+                ws_url,
+                origin="http://127.0.0.1:5173",
+                connection_params={"apiKey": "secret"},
+            )
         )
         assert msg.get("type") == "connection_ack"
     finally:

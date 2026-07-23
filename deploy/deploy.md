@@ -16,8 +16,8 @@ WebSocket upgrades for `/graphql` and `/health`.
 - `.env` on the server with API keys, `VAD_PROXY_ALLOWED_ORIGINS` (e.g.
   `https://biosystems.dev` for the organism app origin), and optionally
   `VAD_PROXY_VOICE_API_KEY` (shared secret for GraphQL `connectionParams.apiKey`
-  on non-localhost clients), and optionally `VAD_PROXY_MAX_SESSIONS` (default
-  `10` concurrent listen subscriptions).
+  — required for all clients when set), and optionally `VAD_PROXY_MAX_SESSIONS`
+  (default `10` concurrent listen subscriptions).
 - Docker and docker compose.
 
 ## Quick start

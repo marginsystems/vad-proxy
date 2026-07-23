@@ -9,6 +9,7 @@ Health is exposed at ``/health``.
 
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -79,7 +80,9 @@ def _api_key_ok(settings: Settings, connection_params: dict | None) -> bool:
     if not settings.voice_api_key:
         return True
     provided = _connection_params_api_key(connection_params)
-    return provided == settings.voice_api_key
+    if provided is None:
+        return False
+    return hmac.compare_digest(provided, settings.voice_api_key)
 
 
 def _voice_connect_ok(
@@ -91,8 +94,8 @@ def _voice_connect_ok(
         return False
     if not settings.voice_api_key:
         return True
-    if origin is not None and _is_localhost_origin(origin):
-        return True
+    # Origin must never exempt the key: it is client-controlled and spoofable
+    # (TD-02 / #28). Localhost Origin remains allowlisted for CORS only.
     return _api_key_ok(settings, connection_params)
 
 
